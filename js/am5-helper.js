@@ -214,15 +214,18 @@ class AMCHandler {
 
       const xAxisRenderer = xAxis.get('renderer');
       if (xAxisRenderer) {
-        xAxisRenderer.grid?.template?.set("visible", chartOpts.xAxis.showGrid);
+        const xGridVisible = !!(chartOpts.xAxis?.showGrid ?? true);
+        xAxisRenderer.grid?.template?.set("visible", xGridVisible);
       }
 
       const yRenderer = yAxis.get('renderer');
       if (yRenderer) {
         const yAxisOpts = chartOpts.yAxis ?? {};
-        yRenderer.grid?.template?.set("visible", !!yAxisOpts.showGrid);
-        yRenderer.labels?.template?.set("visible", !!yAxisOpts.showLabels);
-        yRenderer.set("visible", yAxisOpts.showGrid || yAxisOpts.showLabels);
+        const yGridVisible = !!(yAxisOpts.showGrid ?? true);
+        const yLabelsVisible = !!(yAxisOpts.showLabels ?? true);
+        yRenderer.grid?.template?.set("visible", yGridVisible);
+        yRenderer.labels?.template?.set("visible", yLabelsVisible);
+        yRenderer.set("visible", yGridVisible || yLabelsVisible);
       }
     })()
   }
@@ -5066,44 +5069,3 @@ class AMC {
   }
 };
 // end: AMC
-
-
-/**
- * Recursively merges properties of two objects.
- * Properties from the source object will overwrite those in the target object.
- * This is a deep merge, meaning nested objects are also merged, not just replaced.
- *
- * @param {object} target The object to be merged into.
- * @param {object} source The object containing properties to merge from.
- * @returns {object} A new object representing the merged result.
- */
-function deepMerge(target, source)
-{
-  // Create a new object to avoid mutating the original target object
-  const output = { ...target};
-
-  for (const key in source) {
-    // Ensure the key is an own property of the source object
-    if (source.hasOwnProperty(key)) {
-      // Check if the current property is a plain object (not an array or null)
-      if (
-        typeof source[key] === 'object' &&
-        source[key] !== null &&
-        !Array.isArray(source[key])
-      ) {
-        // If the target also has an object at this key, recurse to merge them
-        if (target.hasOwnProperty(key) && typeof target[key] === 'object') {
-          output[key] = deepMerge(target[key], source[key]);
-        } else {
-          // If the target key is not an object, just copy the source object
-          output[key] = { ...source[key] };
-        }
-      } else {
-        // For non-object properties, directly assign the source value
-        output[key] = source[key];
-      }
-    }
-  }
-
-  return output;
-}
