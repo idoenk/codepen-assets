@@ -1,0 +1,56 @@
+.box-chart, .wrap-chartlegend {
+  max-width: 1100px;
+}
+.chart {
+  /* width: 100%; height: 95vh; */
+  height: 430px;
+}
+
+.wrap-chart {
+  background-color: #fff;
+  margin: -1px;
+  min-height: 150px;
+  position: relative;
+  z-index: 2;
+}
+.credit-layer {
+  position: relative;
+  z-index: 1;
+  width: 60px;
+  height: 20px;
+  margin-top: -20px;
+  background-color: #fff;
+}
+.wrap-chartlegend {
+  visibility: hidden;
+  padding: 1px 15px;
+  margin-bottom: 15px;
+}
+.wrap-chartlegend.active {
+  visibility: visible;
+}
+.chart-legend-outer {
+  position: relative;
+  z-index: 2;
+  padding: 0 10px;
+  border: 1px solid #eee;
+}
+.chart-legend {
+  position: relative;
+  overflow: hidden;
+}
+
+.box-chart {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, .14), 0 3px 1px -2px rgba(0, 0, 0, .12), 0 1px 5px 0 rgba(0, 0, 0, .2);
+  margin-bottom: 15px;
+  margin-top: 5px;
+  position: relative;
+  transition: box-shadow .2s cubic-bezier(.4,0,.2,1);
+  z-index: 1;
+}
+
+body {
+  font-family: "Source Sans Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
