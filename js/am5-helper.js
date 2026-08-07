@@ -2058,25 +2058,36 @@ class AMCHandler {
    */
   wordcloud(rawData) {
     this.initialize();
-    const seriesData = AMCData.get('seriesDataWordcloud', rawData);
+
+    // Will be filtered based on maxCount
+    let seriesData = AMCData.get('seriesDataWordcloud', rawData);
 
     const chartOpts = this.chartOpts;
-    console.log('in wordcloud chartOpts', JSON.stringify(chartOpts));
+    const wcOpts = chartOpts.wordcloud ?? {};
+
+    let maxCount = wcOpts.maxCount ?? undefined;
+    maxCount = maxCount ? Number(maxCount) : undefined;
+
+    let minWordLength = wcOpts.minWordLength ?? undefined;
+    minWordLength = minWordLength ? Number(minWordLength) : undefined;
+
+    if (minWordLength) {
+      seriesData = seriesData
+        .filter(it => it.category && it.category.length >= minWordLength);
+    }
+
+    if (maxCount) {
+      // Sort the data descending based on value, then slice it to match your limit
+      seriesData = seriesData
+        .sort((a, b) => b.value - a.value)
+        .slice(0, maxCount);
+    }
+
     const amc = this.getAmc(this.chartId, { chartOpts });
     const root = amc.createRoot();
 
     const container = amc.getOrCreateZoomableContainer(root);
-    console.log('container', container);
     const series = container.children.push(amc.createWordCloud(root));
-
-    // const wcOpts = {
-    //   hideTools: false,
-    //   // containerOpts: {},
-    //   // toolsOpts: {},
-    //   // wordcloudOpts: {},
-    // };
-    // const series = root.container.children.push(
-    //   amc.createWordCloud(root, wcOpts));
 
     amc.setWordCloudLabel(series);
 
