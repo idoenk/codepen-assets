@@ -2789,6 +2789,8 @@ class AMCData {
             angles: [0, -90], // [0], [0,-90]. Default: [0,-90]
             background: undefined, // #hex
             backgroundOpacity: 1,
+            maxCount: 100,
+            minWordLength: 2,
             labels: { ...labelOpts },
             // onclick: (e) => {
             //   const category = e.target.dataItem.get("category");
@@ -5328,6 +5330,19 @@ class AMC {
           fillOpacity: wcOpts.backgroundOpacity ?? 1,
         })
       : undefined;
+    let maxCount = wcOpts.maxCount ?? undefined;
+    maxCount = maxCount ? Number(maxCount) : undefined;
+
+    let minWordLength = wcOpts.minWordLength ?? undefined;
+    minWordLength = minWordLength ? Number(minWordLength) : undefined;
+
+    let minFontSize = wcOpts.minFontSize ?? undefined;
+    minFontSize = minFontSize ? Number(minFontSize) : undefined;
+    minFontSize = minFontSize ? am5.percent(minFontSize) : undefined;
+
+    let maxFontSize = wcOpts.maxFontSize ?? undefined;
+    maxFontSize = maxFontSize ? Number(maxFontSize) : undefined;
+    maxFontSize = maxFontSize ? am5.percent(maxFontSize) : undefined;
 
     // @see https://www.amcharts.com/docs/v5/reference/wordcloud/#Settings
     const wcParams = {
@@ -5335,10 +5350,12 @@ class AMC {
       categoryField: wcOpts.categoryField,
       valueField: wcOpts.valueField,
       angles: wcOpts.angles ?? [0],
+      maxCount,
+      minWordLength,
+      minFontSize,
+      maxFontSize,
       // shapeTolerance: 0.85,
       // randomness: 0,
-      // minFontSize: am5.percent(2),
-      // maxFontSize: am5.percent(45),
       ...(colorOpts.tone === "heat" ? { calculateAggregates: true } : {}),
       ...(isToneWithColorSet
         ? { colors: am5.ColorSet.new(root, colorSetParams) }
