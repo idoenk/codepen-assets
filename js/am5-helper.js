@@ -256,6 +256,17 @@ class AMCHandler {
         yRenderer.labels?.template?.set("visible", !!yAxisOpts.showLabels);
         yRenderer.set("visible", yAxisOpts.showGrid || yAxisOpts.showLabels);
       }
+    })();
+
+    // Apply templateField to columns of chart.series (instance of am5xy.ColumnSeries)
+    (() => {
+      chart.series.each(series => {
+      if (series instanceof am5xy.ColumnSeries) {
+        series.columns?.template?.setAll({
+          templateField: "data_settings"
+        });
+      }
+    });
     })()
   }
 
@@ -1171,17 +1182,21 @@ class AMCHandler {
 
       series.columns.template.setAll({
         height: am5.p100,
-        strokeOpacity: 1
+        strokeOpacity: 1,
       });
-      
-      // Apply custom color per bar if present in data, otherwise use target (default series color)
+
+      /**
+       * @deprecated in future
+       * fill and stroke color should be handled by supplied data_settings on data item
+       */
       ["fill", "stroke"].forEach(it => {
         series.columns.template.adapters.add(it, function (color, target) {
-          const dataItem = target.dataItem;
-          if (dataItem && dataItem.dataContext && dataItem.dataContext.color) {
-            return am5.color(dataItem.dataContext.color);
-          }
-          return color;
+          const dataContext = target.dataItem?.dataContext;
+          const hasDataSettings = dataContext && "undefined" !== typeof dataContext?.data_settings;
+          const colorValue = hasDataSettings
+            ? dataContext?.data_settings[it]
+            : dataContext?.color;
+          return colorValue ? am5.color(colorValue) : color;
         });
       })
 
@@ -2425,6 +2440,42 @@ class AMCData {
       };
     }
     return newItem;
+  }
+
+  /**
+   * Parse data_settings on item
+   * @param {object} item
+   * @returns {object}
+   */
+  static parseItemDataSettings(item) {
+    if (item.data_settings) {
+      ['fill', 'stroke'].forEach(it => {
+        const itemColor = item.data_settings[it] ?? null;
+        if (!itemColor) return !0;
+
+        const parsedColor = AMC.parseColorAndOpacity(itemColor);
+        if (!parsedColor) return !0;
+
+        item.data_settings[it] = parsedColor.color;
+
+        const opacityKey = `${it}Opacity`;
+
+        /** @type {number|null} */
+        const opacityInput = (() => {
+          let value = item.data_settings[opacityKey] ?? null;
+          value = parseFloat(value);
+          if (isNaN(value)) return null;
+
+          return value < 0 ? 0 : (value > 1 ? 1 : value);
+        })();
+
+        item.data_settings[opacityKey] = opacityInput === null
+          ? parsedColor.opacity ?? 1
+          : opacityInput;
+      });
+    }
+
+    return item;
   }
 
   /**
@@ -3876,28 +3927,32 @@ class AMCData {
 
     return rawData.map(it => {
       let item = {};
-      const hasDto = "undefined" !== typeof it['dto'];
-      if (hasDto) {
-        const dto = it.dto;
+      const meta = it.metadata ?? it;
+      const dto = "object" === typeof it.dto ? it.dto : undefined;
+      if (dto) {
         const user = dto.user ?? {};
         item = {
           ...item,
           category: dto.text ?? dto.key ?? "",
-          value: (dto.metric ?? {})[metricField] ?? 0,
-          avatar: user.avatar_cache ?? user.avatar ?? "",
-          color: dto.color ?? "",
+          value: (dto.metric ?? {})[metricField] ?? meta[metricField] ?? 0,
+          avatar: user.avatar_cache ?? user.avatar ?? meta.from_avatar ?? "",
+          color: dto.color ?? meta.color ?? "",
+          data_settings: dto.data_settings ?? meta.data_settings ?? undefined,
         };
       }
       else {
-        const meta = it.metadata ?? it;
         item = {
           ...item,
           category: meta.message ?? meta.key ?? "",
           value: meta[metricField] ?? 0,
           avatar: meta.from_avatar ?? "",
-          color: meta.color ?? "",
         };
       }
+
+      if (item.data_settings) {
+        item = AMCData.parseItemDataSettings(item);
+      }
+
       const maxLen = 100;
       const catLen = `${item.category}`.length;
       item.category = ((text) => {
@@ -3951,9 +4006,14 @@ class AMCData {
         category: it.label,
         value: it.review_count ?? 0,
         avatar: it.avatar ?? '',
+        data_settings: it.data_settings ?? undefined,
       };
     });
     data.sort((a, b) => b.value - a.value);
+
+    if (data.data_settings) {
+      data = AMCData.parseItemDataSettings(data);
+    }
 
     /** @type {string[]} */
     const cachedCategories = [];
@@ -3983,8 +4043,13 @@ class AMCData {
         category: dto.slug ?? it.label ?? it.name ?? it.key ?? 'n/a',
         value: dto.total ?? it.value ?? it.doc_count ?? 0,
         avatar: it.avatar ?? '',
+        data_settings: it.data_settings ?? undefined,
       };
     });
+
+    if (data.data_settings) {
+      data = AMCData.parseItemDataSettings(data);
+    }
 
     /** @type {string[]} */
     const cachedCategories = [];
