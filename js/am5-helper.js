@@ -2796,7 +2796,7 @@ class AMCData {
             // },
           },
         };
-        typeOpts.wordcloud = deepMerge(
+        typeOpts.wordcloud = AMC.deepMerge(
           typeOpts.wordcloud, merge.wordcloud ?? {});
         break;
     };
