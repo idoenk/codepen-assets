@@ -2064,24 +2064,6 @@ class AMCHandler {
 
     const seriesData = AMCData.get('seriesDataWordcloud', rawData, wcOpts);
 
-    let maxCount = wcOpts.maxCount ?? undefined;
-    maxCount = maxCount ? Number(maxCount) : undefined;
-
-    let minWordLength = wcOpts.minWordLength ?? undefined;
-    minWordLength = minWordLength ? Number(minWordLength) : undefined;
-
-    if (minWordLength) {
-      seriesData = seriesData
-        .filter(it => it.category && it.category.length >= minWordLength);
-    }
-
-    if (maxCount) {
-      // Sort the data descending based on value, then slice it to match your limit
-      seriesData = seriesData
-        .sort((a, b) => b.value - a.value)
-        .slice(0, maxCount);
-    }
-
     const amc = this.getAmc(this.chartId, { chartOpts });
     const root = amc.createRoot();
 
