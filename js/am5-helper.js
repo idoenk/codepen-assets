@@ -2783,6 +2783,7 @@ class AMCData {
             backgroundOpacity: 1,
             maxCount: undefined, // Number
             minWordLength: undefined, // Number
+            excludeWords: undefined, // Array<string>
             minFontSize: undefined, // (range: 1-100)
             maxFontSize: undefined, // (range: 1-100)
             labels: { ...labelOpts },
