@@ -2789,8 +2789,10 @@ class AMCData {
             angles: [0, -90], // [0], [0,-90]. Default: [0,-90]
             background: undefined, // #hex
             backgroundOpacity: 1,
-            maxCount: 100,
-            minWordLength: 2,
+            maxCount: undefined, // Number
+            minWordLength: undefined, // Number
+            minFontSize: undefined, // (range: 1-100)
+            maxFontSize: undefined, // (range: 1-100)
             labels: { ...labelOpts },
             // onclick: (e) => {
             //   const category = e.target.dataItem.get("category");
