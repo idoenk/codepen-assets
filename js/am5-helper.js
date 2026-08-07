@@ -2059,11 +2059,10 @@ class AMCHandler {
   wordcloud(rawData) {
     this.initialize();
 
-    // Will be filtered based on maxCount
-    let seriesData = AMCData.get('seriesDataWordcloud', rawData);
-
     const chartOpts = this.chartOpts;
     const wcOpts = chartOpts.wordcloud ?? {};
+
+    const seriesData = AMCData.get('seriesDataWordcloud', rawData, wcOpts);
 
     let maxCount = wcOpts.maxCount ?? undefined;
     maxCount = maxCount ? Number(maxCount) : undefined;
@@ -3705,21 +3704,61 @@ class AMCData {
    *     {int}, // value
    *   ],
    * ]
-   * @return {array} of:
-   * [
-   *   {
-   *     category: {string},
-   *     value: {int},
-   *   },
-   * ]
+   * @param {object} wordcloudOpts of:
+   * {
+   *   maxCount: {int}, // optional
+   *   minWordLength: {int}, // optional
+   *   excludeWords: {array}, // optional
+   * },
+   * @return {Array<{category: string, value: number}>}
    */
-  seriesDataWordcloud(rawData) {
-    return rawData.map((item) => {
-      return {
-        category: item[0] ?? "",
-        value: item[1] ?? 0,
-      };
-    });
+  seriesDataWordcloud(rawData, wordcloudOpts) {
+    /** @type {number|undefined} */
+    const maxCount = (() => {
+      /** @type {number|typeof NaN} */
+      const numVal = Math.round(wordcloudOpts.maxCount);
+      return isNaN(numVal) || numVal <= 0 ? undefined : numVal;
+    })();
+
+    /** @type {number|undefined} */
+    const minWordLength = (() => {
+      /** @type {number|typeof NaN} */
+      const numVal = Math.round(wordcloudOpts.minWordLength);
+      return isNaN(numVal) || numVal <= 0 ? undefined : numVal;
+    })();
+
+    /** @type {Set<string>} */
+    const excludeWords = (() => {
+      const excludeWords = Array.isArray(wordcloudOpts.excludeWords)
+        ? wordcloudOpts.excludeWords
+        : [];
+      return new Set(excludeWords.map(word => String(word ?? '').trim().toLowerCase()));
+    })();
+
+    /** @type {Array<{category: string, value: number}>} */
+    let seriesData = rawData.map(([category, value]) => ({
+      category: String(category ?? '').trim(),
+      value: Number(value ?? 0),
+    }));
+
+    // Filter: by minWordLength or excludeWords
+    if (minWordLength || excludeWords.size) {
+      seriesData = seriesData
+        .filter(it => {
+          if (minWordLength && it.category.length < minWordLength) return false;
+          if (excludeWords.has(it.category)) return false;
+          return true;
+        });
+    }
+
+    // Filter: by maxCount
+    if (maxCount) {
+      seriesData = seriesData
+        .sort((a, b) => b.value - a.value)
+        .slice(0, maxCount);
+    }
+
+    return seriesData;
   }
 
   /**
