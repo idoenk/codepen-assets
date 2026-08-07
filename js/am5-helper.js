@@ -4208,6 +4208,71 @@ class AMC {
   }
 
   /**
+   * Parses a color string to extract the base color and its opacity.
+   * Supports Hex (6/8/3/4 digits), legacy comma RGB/RGBA, and modern slash RGB.
+   *
+   * @param {string} colorInput E.g. "#ffffff", "#0000", "rgba(0, 0, 0, 0.5)"
+   * @param {string} fallbackColor E.g. "#ffffff", "#0000", "rgba(0, 0, 0, 0.5)"
+   * @return {{ color: am5.Color, opacity: number }}
+   */
+  static parseColorAndOpacity(colorInput, fallbackColor) {
+    let opacity = 1;
+    let baseColor = String(colorInput || fallbackColor).trim().toLowerCase();
+
+    if (baseColor.startsWith('#')) {
+      const hex = baseColor.substring(1);
+
+      // Handle 4-digit (#RGBA) and 8-digit (#RRGGBBAA) hex codes
+      if (hex.length === 4 || hex.length === 8) {
+        const alphaHex = hex.length === 4
+          ? hex.substring(3, 4).repeat(2)
+          : hex.substring(6, 8);
+        opacity = parseInt(alphaHex, 16) / 255;
+        baseColor = '#' + (
+          hex.length === 4 ? hex.substring(0, 3) : hex.substring(0, 6)
+        );
+      }
+    }
+    else if (baseColor.startsWith('rgb')) {
+      const match = baseColor.match(/^rgba?\(([\s\S]+)\)$/i);
+
+      if (match) {
+        const content = match[1];
+        const isModernSyntax = content.includes('/');
+        const parts = isModernSyntax ? content.split('/') : content.split(',');
+        const cleanedParts = parts.map(part => part.trim());
+
+        if (cleanedParts.length === 4 && !isModernSyntax) {
+          // Format: rgba(r, g, b, a)
+          const alphaVal = cleanedParts[3];
+          opacity = alphaVal.endsWith('%')
+            ? parseFloat(alphaVal) / 100
+            : parseFloat(alphaVal);
+          baseColor = `rgb(${cleanedParts[0]}, ${cleanedParts[1]}, ${cleanedParts[2]})`;
+        }
+        else if (cleanedParts.length === 2 && isModernSyntax) {
+          // Format: rgb(r g b / a)
+          const rgbValues = cleanedParts[0].split(/\s+/).filter(Boolean);
+          const alphaVal = cleanedParts[1];
+          opacity = alphaVal.endsWith('%')
+            ? parseFloat(alphaVal) / 100
+            : parseFloat(alphaVal);
+          baseColor = `rgb(${rgbValues.join(', ')})`;
+        }
+      }
+    }
+    else baseColor = fallbackColor;
+
+    // Sanitize opacity to ensure it stays between 0 and 1
+    opacity = Math.max(0, Math.min(1, isNaN(opacity) ? 1 : opacity));
+
+    return {
+      color: am5.color(baseColor),
+      opacity: Number(opacity.toFixed(2))
+    };
+  }
+
+  /**
    * Rebuild category if already exists in cachedList
    * @param {string} category
    * @param {string[]} cachedList
@@ -5357,26 +5422,44 @@ class AMC {
       colorSetParams.colors = [];
       customColors.forEach(val => colorSetParams.colors.push(am5.color(val)));
     }
-    const bgColor = wcOpts.isDarkmode ? '#272822' : (wcOpts.background ?? undefined);
-    const background = bgColor
+    const bgColorInput = wcOpts.isDarkmode ? '#272822' : (wcOpts.background ?? undefined);
+    const bgOpacityInput = wcOpts.backgroundOpacity ?? undefined;
+
+    /** @type {object|undefined} */
+    const parsedBgColor = bgColorInput
+      ? AMC.parseColorAndOpacity(bgColorInput)
+      : undefined;
+
+    const background = parsedBgColor
       ? am5.Rectangle.new(root, {
-          fill: am5.color(bgColor),
-          fillOpacity: wcOpts.backgroundOpacity ?? 1,
+          fill: parsedBgColor.color,
+          fillOpacity: bgOpacityInput ?? parsedBgColor.opacity,
         })
       : undefined;
-    let maxCount = wcOpts.maxCount ?? undefined;
-    maxCount = maxCount ? Number(maxCount) : undefined;
 
-    let minWordLength = wcOpts.minWordLength ?? undefined;
-    minWordLength = minWordLength ? Number(minWordLength) : undefined;
+    /** @type {am5.Percent|undefined} */
+    const minFontSize = (() => {
+      let fontSize = wcOpts.minFontSize ?? undefined;
+      if (fontSize) {
+        fontSize = Number(fontSize);
+        fontSize = fontSize >= 1 && fontSize <= 100
+          ? am5.percent(fontSize)
+          : undefined;
+      }
+      return fontSize;
+    })();
 
-    let minFontSize = wcOpts.minFontSize ?? undefined;
-    minFontSize = minFontSize ? Number(minFontSize) : undefined;
-    minFontSize = minFontSize ? am5.percent(minFontSize) : undefined;
-
-    let maxFontSize = wcOpts.maxFontSize ?? undefined;
-    maxFontSize = maxFontSize ? Number(maxFontSize) : undefined;
-    maxFontSize = maxFontSize ? am5.percent(maxFontSize) : undefined;
+    /** @type {am5.Percent|undefined} */
+    const maxFontSize = (() => {
+      let fontSize = wcOpts.maxFontSize ?? undefined;
+      if (fontSize) {
+        fontSize = Number(fontSize);
+        fontSize = fontSize >= 1 && fontSize <= 100
+          ? am5.percent(fontSize)
+          : undefined;
+      }
+      return fontSize;
+    })();
 
     // @see https://www.amcharts.com/docs/v5/reference/wordcloud/#Settings
     const wcParams = {
@@ -5384,10 +5467,10 @@ class AMC {
       categoryField: wcOpts.categoryField,
       valueField: wcOpts.valueField,
       angles: wcOpts.angles ?? [0],
-      maxCount,
-      minWordLength,
       minFontSize,
       maxFontSize,
+      // maxCount,
+      // minWordLength,
       // shapeTolerance: 0.85,
       // randomness: 0,
       ...(colorOpts.tone === "heat" ? { calculateAggregates: true } : {}),
