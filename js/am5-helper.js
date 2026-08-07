@@ -214,18 +214,15 @@ class AMCHandler {
 
       const xAxisRenderer = xAxis.get('renderer');
       if (xAxisRenderer) {
-        const xGridVisible = !!(chartOpts.xAxis?.showGrid ?? true);
-        xAxisRenderer.grid?.template?.set("visible", xGridVisible);
+        xAxisRenderer.grid?.template?.set("visible", chartOpts.xAxis.showGrid);
       }
 
       const yRenderer = yAxis.get('renderer');
       if (yRenderer) {
         const yAxisOpts = chartOpts.yAxis ?? {};
-        const yGridVisible = !!(yAxisOpts.showGrid ?? true);
-        const yLabelsVisible = !!(yAxisOpts.showLabels ?? true);
-        yRenderer.grid?.template?.set("visible", yGridVisible);
-        yRenderer.labels?.template?.set("visible", yLabelsVisible);
-        yRenderer.set("visible", yGridVisible || yLabelsVisible);
+        yRenderer.grid?.template?.set("visible", !!yAxisOpts.showGrid);
+        yRenderer.labels?.template?.set("visible", !!yAxisOpts.showLabels);
+        yRenderer.set("visible", yAxisOpts.showGrid || yAxisOpts.showLabels);
       }
     })()
   }
@@ -280,6 +277,20 @@ class AMCHandler {
     );
 
     return chart;
+  }
+
+  /**
+   * Trigger appearance of chart element.
+   * @param {am5.Chart|am5.XYChart|am5.PieChart|am5.Series} obj
+   * @return {am5.Chart|am5.XYChart|am5.PieChart|am5.Series}
+   */
+  triggerAppearanceOf(obj) {
+    if (!obj) return obj;
+    if (typeof obj.appear === "function") {
+      this.#beforeChartAppear();
+      return obj.appear(AMCData.CHART_FADE_IN, AMCData.CHART_DELAY);
+    }
+    return obj;
   }
 
   /**
@@ -1068,6 +1079,16 @@ class AMCHandler {
   }
 
   /**
+   * Render clustered column by specified metricField
+  * @param {array} rawData
+  * @param {string} metricField Default: doc_count
+   */
+  horizontalColumn(rawData, metricField='doc_count') {
+    metricField = metricField ? metricField : 'doc_count';
+    return this.horizontalColumnTopMetric(rawData, metricField);
+  }
+
+  /**
    * Render clustered column of top post sorted by specified metricField
    * @param {array} rawData
    * @param {string} metricField
@@ -1134,11 +1155,13 @@ class AMCHandler {
      * Create horizontal column series
      * @param {string} field
      * @param {string} name
+     * @param {?object} colorOpts
      * @returns {series}
      */
-    function createSeries(field, name) {
+    function createSeries(field, name, colorOpts) {
       const series = chart.series.push(am5xy.ColumnSeries.new(root, {
         name: name,
+        ...(colorOpts ? colorOpts : {}),
         xAxis: xAxis,
         yAxis: yAxis,
         valueXField: field,
@@ -1150,12 +1173,29 @@ class AMCHandler {
         height: am5.p100,
         strokeOpacity: 1
       });
+      
+      // Apply custom color per bar if present in data, otherwise use target (default series color)
+      ["fill", "stroke"].forEach(it => {
+        series.columns.template.adapters.add(it, function (color, target) {
+          const dataItem = target.dataItem;
+          if (dataItem && dataItem.dataContext && dataItem.dataContext.color) {
+            return am5.color(dataItem.dataContext.color);
+          }
+          return color;
+        });
+      })
+
       series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
 
       return series;
     }
-    const seriesName = `${metricField}`.replace('_', ' ').toLowerCase();
-    const series = createSeries("value", AMC.ucfirst(seriesName));
+    let seriesName = chartOpts.series?.name ?? '';
+    seriesName = seriesName
+      ? seriesName
+      : AMC.ucfirst(`${metricField}`.replace('_', ' ').toLowerCase());
+
+    const colorOpts = AMC.getSeriesColorFromOptions(chartOpts);
+    const series = createSeries("value", seriesName, colorOpts);
     series.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
 
@@ -1572,13 +1612,14 @@ class AMCHandler {
   }
 
   /**
+   * @deprecated @see pieChart()
    * Render donut chart of popular sentiment
    * @param {array} rawData
    */
   donutPopularData(rawData, metafield) {
     this.initialize();
     const seriesData = AMCData.get(
-      'seriesDataPopularSentiment', rawData, metafield);
+      'seriesDataPopular', rawData, metafield);
 
     const chartOpts = this.chartOpts;
     const onClick = "function" === typeof chartOpts.onclick
@@ -1596,11 +1637,13 @@ class AMCHandler {
     const legendOpts = chartOpts.legend ?? {};
     const labelValueOpts = legendOpts.labelValue ?? {};
 
-    const labelText = [];
+    const textValues = [];
 
+    const percentFormater = 'valuePercentTotal.formatNumber';
+    const percentDetail = '0.0';
     const mapLabels = {
-      category: "{category}:",
-      percentage: "{valuePercentTotal.formatNumber('0.00')}%",
+      category: "{category}",
+      percentage: `{${percentFormater}('${percentDetail}')}%`,
       value: "({value})",
     };
     /** @type {object} */
@@ -1614,48 +1657,61 @@ class AMCHandler {
     if (tooltipLabels.length) {
       tooltipLabels.forEach(it => {
         const val = mapLabels[it] ?? '';
-        if (val) labelText.push(val);
+        if (val) textValues.push(val);
       });
     }
+
+    const cursorOpts = chartOpts.cursor ?? { enabled: true };
+    const cursorEnabled = cursorOpts.enabled ?? true;
 
     const series = chart.series.push(
       am5percent.PieSeries.new(root, {
         valueField: `${chartOpts.valueField}`,
         categoryField: `${chartOpts.categoryField}`,
         endAngle: 270,
-        tooltip: am5.Tooltip.new(root, {
-          labelText: labelText.join(" "),
-        }),
-        ...(!labelValueOpts.visible
-          ? { legendValueText: "" }
-          : {}),
+        alignLabels: labelsOpts.aligned,
+        ...(chartOpts.radius ? { radius: am5.percent(chartOpts.radius) } : {}),
+        ...(cursorEnabled
+            ? {tooltip: am5.Tooltip.new(root, {labelText: textValues.join(" ")})}
+            : {}),
+        ...(!labelValueOpts.visible ? { legendValueText: "" } : {}),
       }));
 
-    /** @type {array} */
-    const inlineLabels = labelsOpts.inline ?? [];
-
-    if (inlineLabels.length) {
-      labelText.length = 0;
-      inlineLabels.forEach(it => {
-        const val = mapLabels[it] ?? '';
-        if (val) labelText.push(val);
+    let inputText = labelsOpts.text ?? '';
+    if (inputText) {
+      // E.g. {percentage:0.0}
+      const textRegex = /{(percentage)(?:\:([^\}]+))?}/;
+      inputText = inputText.replace(textRegex, (S, $1, $2) => {
+        $2 = "undefined" !== typeof $2 ? $2 : percentDetail;
+        return `{${percentFormater}('${$2}')}%`;
       });
     }
-    else labelText.pop();
+    else {
+      /** @type {array} */
+      const inlineLabels = labelsOpts.inline ?? [];
 
-    series.labels.template.set("text", labelText.join(' '));
+      if (inlineLabels.length) {
+        textValues.length = 0;
+        inlineLabels.forEach(it => {
+          const val = mapLabels[it] ?? '';
+          if (val) textValues.push(val);
+        });
+      }
+      inputText = textValues.join(labelsOpts.inlineText ? ' ' : '\n');
+    }
+    series.labels.template.setAll({
+      ...labelsOpts,
+      text: inputText
+    });
     series.states.create("hidden", { endAngle: -90 });
 
-    const cursorOpts = chartOpts.cursor ?? { enabled: true };
-    const cursorEnabled = cursorOpts.enabled ?? true;
-    const sliceTemplate = series.slices.template;
-    sliceTemplate.setAll({
+    series.slices.template.setAll({
       templateField: "settings",
       cursorOverStyle: onClick ? "pointer" : "default",
       ...(!cursorEnabled ? { tooltipText: "" } : {}),
     });
     if (onClick) {
-      sliceTemplate.events.on("pointerdown", function (e) {
+      series.slices.template.events.on("pointerdown", function (e) {
         onClick(e);
       });
     }
@@ -1675,7 +1731,9 @@ class AMCHandler {
     const legend = amc.setLegend();
     if (legend) legend.data.setAll(series.dataItems);
 
-    return this.triggerChartAppearance();
+    this.triggerAppearanceOf(series);
+
+    return chart;
   }
 
   /**
@@ -1684,7 +1742,8 @@ class AMCHandler {
    * @param {array} rawData
    */
   donutPopularSentiment(rawData, metafield) {
-    return this.donutPopularData(rawData, metafield);
+    // return this.donutPopularData(rawData, metafield);
+    return this.pieChart(rawData, metafield);
   }
 
   /**
@@ -1693,7 +1752,8 @@ class AMCHandler {
    * @param {array} rawData
    */
   donutPopularBot(rawData, metafield) {
-    return this.donutPopularData(rawData, metafield);
+    // return this.donutPopularData(rawData, metafield);
+    return this.pieChart(rawData, metafield);
   }
 
   /**
@@ -1702,7 +1762,139 @@ class AMCHandler {
    * @param {array} rawData
    */
   donutPopularMedia(rawData, metafield) {
-    return this.donutPopularData(rawData, metafield);
+    // return this.donutPopularData(rawData, metafield);
+    return this.pieChart(rawData, metafield);
+  }
+
+  /**
+   * Render pie/donut chart
+   * @param {array} rawData
+   * @param {string} metaField
+   */
+  pieChart(rawData, metaField) {
+    this.initialize();
+    const chartOpts = this.chartOpts;
+
+    metaField = metaField ? metaField : (chartOpts.metaField ?? '');
+    const seriesData = AMCData.get(
+      'seriesDataPieChart', rawData, metaField);
+
+    const onClick = "function" === typeof chartOpts.onclick
+      ? chartOpts.onclick
+      : undefined;
+    const amc = this.getAmc(this.chartId, { chartOpts });
+    const root = amc.createRoot({
+      rootOpts: {
+        marginBottom: "1rem"
+      },
+    });
+    root.container.set("layout", root.verticalLayout);
+    const chart = amc.createPieChart(root);
+
+    const legendOpts = chartOpts.legend ?? {};
+    const labelValueOpts = legendOpts.labelValue ?? {};
+
+    const textValues = [];
+
+    const percentFormater = 'valuePercentTotal.formatNumber';
+    const percentDetail = '0.0';
+    const mapLabels = {
+      category: "{category}",
+      percentage: `{${percentFormater}('${percentDetail}')}%`,
+      value: "({value})",
+    };
+    /** @type {object} */
+    const labelsOpts = chartOpts.labels ?? {};
+
+    /** @type {array} */
+    const tooltipLabelFields = labelsOpts.tooltipLabelFields ?? [];
+    if (!tooltipLabelFields.length)
+      Object.keys(mapLabels).forEach(it => tooltipLabelFields.push(it));
+
+    if (tooltipLabelFields.length) {
+      tooltipLabelFields.forEach(it => {
+        const val = mapLabels[it] ?? '';
+        if (val) textValues.push(val);
+      });
+    }
+
+    const cursorOpts = chartOpts.cursor ?? { enabled: true };
+    const cursorEnabled = cursorOpts.enabled ?? true;
+
+    const series = chart.series.push(
+      am5percent.PieSeries.new(root, {
+        valueField: `${chartOpts.valueField}`,
+        categoryField: `${chartOpts.categoryField}`,
+        endAngle: 270,
+        ...(chartOpts.radius ? { radius: am5.percent(chartOpts.radius) } : {}),
+        alignLabels: labelsOpts.aligned,
+        ...(cursorEnabled
+          ? { tooltip: am5.Tooltip.new(root, {labelText: textValues.join(" ")}) }
+          : {}),
+        ...(!labelValueOpts.visible ? { legendValueText: "" } : {}),
+      }));
+
+    let customText = labelsOpts.customText ?? '';
+    if (customText) {
+      // E.g. {percentage:0.0}
+      const textRegex = /{(percentage)(?:\:([^\}]+))?}/;
+      customText = customText.replace(textRegex, (S, $1, $2) => {
+        $2 = "undefined" !== typeof $2 ? $2 : percentDetail;
+        return `{${percentFormater}('${$2}')}%`;
+      });
+    }
+    else {
+      /** @type {array} */
+      const inlineLabelFields = labelsOpts.inlineLabelFields ?? [];
+
+      if (inlineLabelFields.length) {
+        textValues.length = 0;
+        inlineLabelFields.forEach(it => {
+          const val = mapLabels[it] ?? '';
+          if (val) textValues.push(val);
+        });
+      }
+      customText = textValues.join(labelsOpts.inlineText ? ' ' : '\n');
+    }
+    series.labels.template.setAll({
+      ...labelsOpts,
+      text: customText
+    });
+    series.states.create("hidden", { endAngle: -90 });
+
+    series.slices.template.setAll({
+      templateField: "settings",
+      cursorOverStyle: (onClick && cursorEnabled) ? "pointer" : "default",
+      ...(!cursorEnabled ? { tooltipText: "" } : {}),
+    });
+    if (onClick && cursorEnabled) {
+      series.slices.template.events.on("pointerdown", function (e) {
+        onClick(e);
+      });
+    }
+
+    if (cursorEnabled) {
+      const hoverScale = chartOpts.hoverScale ?? undefined;
+      const activeShiftRadius = chartOpts.activeShiftRadius ?? undefined;
+      if (hoverScale)
+        series.slices.template.states.create("hover", {scale: hoverScale});
+
+      if (activeShiftRadius) {
+        series.slices.template.states.create("active", {
+          shiftRadius: activeShiftRadius
+        });
+      }
+    }
+    else series.slices.template.set("toggleKey", "none");
+
+    series.data.setAll(seriesData);
+
+    const legend = amc.setLegend();
+    if (legend) legend.data.setAll(series.dataItems);
+
+    this.triggerAppearanceOf(series);
+
+    return chart;
   }
 
   /**
@@ -1869,22 +2061,28 @@ class AMCHandler {
     const seriesData = AMCData.get('seriesDataWordcloud', rawData);
 
     const chartOpts = this.chartOpts;
+    console.log('in wordcloud chartOpts', JSON.stringify(chartOpts));
     const amc = this.getAmc(this.chartId, { chartOpts });
     const root = amc.createRoot();
 
-    const wcOpts = {
-      hideTools: true,
-      // containerOpts: {},
-      // toolsOpts: {},
-      // wordcloudOpts: {},
-    };
-    const series = root.container.children.push(
-      amc.createWordCloud(root, wcOpts));
+    const container = amc.getOrCreateZoomableContainer(root);
+    console.log('container', container);
+    const series = container.children.push(amc.createWordCloud(root));
+
+    // const wcOpts = {
+    //   hideTools: false,
+    //   // containerOpts: {},
+    //   // toolsOpts: {},
+    //   // wordcloudOpts: {},
+    // };
+    // const series = root.container.children.push(
+    //   amc.createWordCloud(root, wcOpts));
+
     amc.setWordCloudLabel(series);
 
     series.data.setAll(seriesData);
-    series.appear(AMCData.SERIES_FADE_IN);
-    // this.afterRender(series);
+
+    this.triggerAppearanceOf(series);
   }
 
   /**
@@ -2420,6 +2618,7 @@ class AMCData {
 
     switch (type) {
       case "pie":
+        const mLabels = merge.labels ?? {};
         typeOpts = {
           legend: { ...legendOpts },
           categoryField: "category",
@@ -2427,12 +2626,18 @@ class AMCData {
           radius: null,
           innerRadius: 30,
           labels: {
-            inline: ['category', 'percentage'],
-            tooltip: [...pieLabelFields],
+            aligned: mLabels.aligned ?? false,
+            inlineLabelFields: ['percentage', 'category'],
+            customText: mLabels.text ?? '',
+            inlineText: mLabels.inlineText ?? true,
+            textAlign: mLabels.textAlign ?? 'center',
+            maxWidth: mLabels.maxWidth ?? null,
+            oversizedBehavior: mLabels.oversizedBehavior ?? 'none', // none, truncate, wrap
+            tooltipLabelFields: [...pieLabelFields],
           },
-          // To disable hover scale effect, set hoverScale to 1
+          // Set hoverScale to 1 to avoid slice to be scaled up on hover
           hoverScale: merge.hoverScale ?? null,
-          // To disable active shift effect, set activeShiftRadius to 0
+          // Set activeShiftRadius to 0 to avoid pull-out slice on click
           activeShiftRadius: merge.activeShiftRadius ?? null,
           // onclick: (e) => {
           //   const target = e.target;
@@ -2532,14 +2737,14 @@ class AMCData {
             paddingBottom: 0,
             fontSize: undefined,
           };
-          const radarOpts = deepMerge({
+          const radarOpts = AMC.deepMerge({
             categoryField: 'category',
             valueField: 'value',
             innerRadius: undefined,
             chartRadius: undefined,
             labels: { ...radarLabelsOpts },
           }, merge);
-          typeOpts = deepMerge(typeOpts, radarOpts);
+          typeOpts = AMC.deepMerge(typeOpts, radarOpts);
           ['xAxis', 'yAxis'].forEach((f) => delete typeOpts[f]);
         }
         break;
@@ -2596,12 +2801,12 @@ class AMCData {
         break;
     };
 
-    options = deepMerge(options, typeOpts);
+    options = AMC.deepMerge(options, typeOpts);
     if (excludes.length) {
       excludes.forEach((field) => delete options[field]);
     }
 
-    options = deepMerge(options, merge);
+    options = AMC.deepMerge(options, merge);
 
     return options;
   }
@@ -2979,7 +3184,13 @@ class AMCData {
       (it.items ?? []).forEach(_it => {
         const name = _it.name ?? undefined;
         if (!name) return true;
-        obj[name] = Number(_it.value) || _it.value;
+
+        /** @type {number|string} */
+        const value = "undefined" !== typeof _it.value
+          ? Number(_it.value)
+          : (_it.label ?? 'Untitled');
+
+        obj[name] = value;
       });
       return obj;
     });
@@ -3012,9 +3223,11 @@ class AMCData {
     const keyedData = {};
     rawData.forEach(it => {
       (it.items ?? []).forEach(_it => {
+        const hasValue = "undefined" !== typeof _it.value;
         const label = _it.label ?? undefined;
         const name = _it.name ?? undefined;
-        if (!label || !name || (name && keyedData[name])) return true;
+        const isKeyed = name && "undefined" !== typeof keyedData[name];
+        if (!hasValue || !label || !name || isKeyed) return true;
         keyedData[name] = label;
       });
     });
@@ -3203,6 +3416,7 @@ class AMCData {
   }
 
   /**
+   * @deprecated @see seriesDataPieChart()
    * Transform given data for series of Popular Sentiment
    * @param {array} rawData of:
    * [
@@ -3226,7 +3440,7 @@ class AMCData {
    *   },
    * ]
    */
-  seriesDataPopularSentiment(rawData, metafield) {
+  seriesDataPopular(rawData, metafield) {
     let data_type = ''; // bot, sentimen
 
     // auto suggest meta field based on label
@@ -3315,6 +3529,113 @@ class AMCData {
       Object.keys(item).forEach((field) => {
         if (whitelistFields.indexOf(field) === -1)
           delete item[field];
+      });
+      return item;
+    });
+  }
+
+  /**
+   * Transform given data for series of pie chart
+   * @param {array} rawData
+   * @param {string} metaField
+   * @return {array} of:
+   * [
+   *   {
+   *     category: {string},
+   *     value: {int},
+   *     key: {string},
+   *     settings: {object},
+   *     meta_field: {string},
+   *   },
+   * ]
+   */
+  seriesDataPieChart(rawData, metaField) {
+    /** @var {'bot'|'sentimen'|''}*/
+    let dataType = '';
+
+    const dataTypePatterns = {
+      bot: {
+        labels: [/\bbot\b/, /\bhuman\b/],
+      },
+      sentimen: {
+        labels: [/\bpos/, /\bneg/],
+      },
+    };
+
+    // Guess metaField based on rawData item label
+    metaField = (it => {
+      if (it) return it;
+
+      let guessedMetaField = '';
+
+      Object.keys(dataTypePatterns).forEach(ptype => {
+        const matchTests = [];
+        rawData.forEach(item => {
+          /** @type {object} */
+          const dto = item.dto ?? item;
+          const label = (dto.label ?? dto.slug ?? dto.key ?? '').toLowerCase();
+          dataTypePatterns[ptype].labels.forEach(pattern => {
+            if (pattern.test(label)) matchTests.push(pattern);
+          });
+        });
+        if (matchTests.length === dataTypePatterns[ptype].labels.length) {
+          dataType = `${ptype}`;
+          guessedMetaField = `metadata.classifiers.${ptype}.label`;
+          return false;
+        }
+      });
+
+      return guessedMetaField;
+    })(metaField);
+
+    // Failover: set empty dataType value if metaField is not empty
+    dataType = !dataType && metaField
+      ? (/\.bot\./.test(metaField)
+        ? "bot"
+        : (/sentiment?/.test(metaField) ? "sentimen" : ""))
+      : dataType;
+
+    const mapLabel = AMC.getMapLabel(dataType);
+    const whitelistFields = [
+      'category', 'value', 'key', 'settings', 'meta_field',
+    ];
+
+    return rawData.map(item => {
+      /** @type {boolean} */
+      const hasDto = "object" === typeof item.dto;
+
+      /** @type {object} */
+      const dto = item.dto ?? item;
+
+      const label = (dto.label ?? dto.slug ?? item.key ?? '').toLowerCase();
+
+      const revLabel = {
+        positive: "positif",
+        negative: "negatif",
+        neutral: "netral",
+      };
+      item.key = hasDto
+        ? (dto.slug ?? item.key)
+        : (item.ch_key ?? item.key ?? revLabel[label] ?? label);
+
+      /** @type {object|null} */
+      const mapItem = mapLabel[label] ?? mapLabel[item.key] ?? null;
+      item.category = AMC.ucfirst((mapItem?.label ?? label).toLowerCase());
+
+      // console.warn('data_type', data_type, 'mapLabel', mapLabel, 'mapItem', mapItem);
+      if (mapItem && mapItem.color) {
+        item.settings = {
+          stroke: mapItem.color,
+          fill: mapItem.color,
+        };
+      }
+
+      item.value = dto.total ?? item.doc_count ?? item.value ?? 0;
+      item.meta_field = hasDto && dto.metafield ? dto.metafield : metaField;
+
+      Object.keys(item).forEach(itemField => {
+        if (!whitelistFields.includes(itemField))
+          delete item[itemField];
       });
       return item;
     });
@@ -3506,6 +3827,7 @@ class AMCData {
    *     category: {string},
    *     value: {string},
    *     avatar: {string},
+   *     color: {string},
    *   },
    * ]
    */
@@ -3523,18 +3845,20 @@ class AMCData {
         const user = dto.user ?? {};
         item = {
           ...item,
-          category: dto.text ?? "",
+          category: dto.text ?? dto.key ?? "",
           value: (dto.metric ?? {})[metricField] ?? 0,
           avatar: user.avatar_cache ?? user.avatar ?? "",
+          color: dto.color ?? "",
         };
       }
       else {
-        const meta = it.metadata;
+        const meta = it.metadata ?? it;
         item = {
           ...item,
-          category: meta.message ?? "",
+          category: meta.message ?? meta.key ?? "",
           value: meta[metricField] ?? 0,
           avatar: meta.from_avatar ?? "",
+          color: meta.color ?? "",
         };
       }
       const maxLen = 100;
@@ -3778,10 +4102,9 @@ class AMC {
   /**
    * Get Map Label of given datatype
    * @param {string} datatype
-   * @return {object}
+   * @return {Object|Object<string, {label: string, color: string}>}
    */
   static getMapLabel(datatype) {
-    /** @var {object} */
     let result = {};
 
     switch (datatype) {
@@ -4031,6 +4354,72 @@ class AMC {
   }
 
   /**
+   * Get colors for series from chart options
+   * @param {object} chartOpts
+   * @returns {object} of:
+   * {
+   *   ?stroke: <am5Color>,
+   *   ?fill: <am5Color>
+   * }
+   */
+  static getSeriesColorFromOptions(chartOpts) {
+    const seriesOpts = chartOpts.series ?? {};
+    const strokeColor = seriesOpts.strokes?.color ?? undefined;
+    const fillColor = seriesOpts.fills?.color ?? undefined;
+    const colorOpts = {
+      ...(strokeColor ? {stroke: am5.color(strokeColor)} : {}),
+      ...(fillColor ? {fill: am5.color(fillColor)} : {}),
+    };
+
+    return colorOpts;
+  }
+
+  /**
+   * Deep merge objects
+   * This will try call public function;
+   * failover call to protected method #deepMerge
+   * @param {object} target The object to be merged into.
+   * @param {object} source The object containing properties to merge from.
+   * @return {object}
+   */
+  static deepMerge(target, source) {
+    if (typeof window['deepMerge'] === 'function') {
+      return window['deepMerge'](target, source);
+    }
+
+    return AMC.#deepMerge(target, source);
+  }
+
+  /**
+   * Recursively merges properties of two objects.
+   * Properties from the source object will overwrite those in the target object.
+   * This is a deep merge, meaning nested objects are also merged, not just replaced.
+   *
+   * @param {object} target The object to be merged into.
+   * @param {object} source The object containing properties to merge from.
+   * @returns {object} A new object representing the merged result.
+   */
+  static #deepMerge(target, source) {
+    const output = { ...target};
+
+    for (const key in source) {
+      if (source.hasOwnProperty(key)) {
+        if (
+          typeof source[key] === 'object' &&
+          source[key] !== null &&
+          !Array.isArray(source[key])
+        ) {
+          if (target.hasOwnProperty(key) && typeof target[key] === 'object')
+            output[key] = AMC.#deepMerge(target[key], source[key]);
+          else output[key] = { ...source[key] };
+        } else output[key] = source[key];
+      }
+    }
+
+    return output;
+  }
+
+  /**
    * Return whether logo is diposes from property
    * @returns {bool}
    */
@@ -4078,8 +4467,11 @@ class AMC {
 
     const themeOpts = [];
 
-    if ("undefined" !== typeof window["am5themes_Animated"])
-      themeOpts.push(am5themes_Animated.new(root));
+    if ("undefined" !== typeof window["am5themes_Animated"]) {
+      if (chartOpts.animated ?? true) {
+        themeOpts.push(am5themes_Animated.new(root));
+      }
+    }
 
     const myTheme = am5.Theme.new(root);
     if (chartOpts.labelFontSize)
@@ -4184,9 +4576,10 @@ class AMC {
       ...(radius ? { radius: am5.percent(radius) } : {}),
       ...(innerRadius ? { innerRadius: am5.percent(innerRadius) } : {}),
       endAngle: 270,
+      layout: root.verticalLayout
     };
     opts = opts ?? {};
-    opts = { ...defaultOpts, ...opts };
+    opts = AMC.deepMerge(defaultOpts, opts);
     const chart = root.container.children.push(
       am5percent.PieChart.new(root, opts));
     if (chart) this.setChart(chart);
@@ -4214,7 +4607,7 @@ class AMC {
       wheelY: "none"
     };
     opts = opts ?? {};
-    opts = { ...defaultOpts, ...opts };
+    opts = AMC.deepMerge(defaultOpts, opts);
     const chart = root.container.children.push(
       am5radar.RadarChart.new(root, opts));
     if (chart) this.setChart(chart);
@@ -4519,12 +4912,8 @@ class AMC {
       // force legend position to bottom
       legendParams = {
         ...legendParams,
-        width: align === "center"
-          ? "auto"
-          : am5.percent(100),
-        x: align === "center"
-          ? am5.percent(50)
-          : am5.percent(wPerc),
+        width: align === "center" ? "auto" : am5.percent(100),
+        x: align === "center" ? am5.percent(50) : am5.percent(wPerc),
         centerX: am5.percent(align === "center" ? 50 : 0),
         y: am5.percent(100),
         centerY: am5.percent(100),
@@ -4592,11 +4981,7 @@ class AMC {
     const fontSize = legendChartOpts.labels && legendChartOpts.labels.fontSize
       ? legendChartOpts.labels.fontSize
       : null;
-    if (fontSize) {
-      legend.labels.template.setAll({
-        fontSize,
-      });
-    }
+    if (fontSize) legend.labels.template.setAll({fontSize});
 
     if (isSeparated && $legend && $legend.length) {
       legend.events.on("boundschanged", function () {
@@ -4867,91 +5252,95 @@ class AMC {
   }
 
   /**
+   * Get or create zoomable container (for wordcloud)
+   * @param {am5.Root} root
+   * @return {am5.ZoomableContainer|am5.Container}
+   */
+  getOrCreateZoomableContainer(root) {
+    if (!root) root = this.getRoot();
+
+    const chartOpts = this.chartOpts ?? {};
+    const wcOpts = chartOpts.wordcloud ?? {};
+    const isZoomable = wcOpts.zoomable ?? false;
+    if (!isZoomable) return root.container;
+
+    const containerOptsDefault = {
+      width: am5.p100,
+      height: am5.p100,
+      wheelable: true,
+      pinchZoom: true
+    };
+
+    const zoomableContainer = root.container.children.push(
+      am5.ZoomableContainer.new(root, containerOptsDefault));
+
+    zoomableContainer.children.push(am5.ZoomTools.new(root, {
+      target: zoomableContainer,
+      buttons: [
+        "zoomIn",
+        "zoomOut"
+      ]
+    }));
+
+    return zoomableContainer;
+  }
+
+  /**
    * Create wordcloud
    * @param {am5.Root} root
-   * @param {object} opts of:
-   * {
-   *   hideTools: {boolean},
-   *   containerOpts: {object},
-   *   toolsOpts: {object},
-   *   wordcloudOpts: {object},
-   * }
    * @return {am5.WordCloud}
    */
-  createWordCloud(root, opts) {
+  createWordCloud(root) {
     if (!root) root = this.getRoot();
-    opts = opts ?? {};
-    // ############
-    // #ZoomTools
-    // ############
-    if (!opts.hideTools) {
-      // #ZoomableContainer
-      const containerOptsDefault = {
-        width: am5.p100,
-        height: am5.p100,
-        wheelable: true,
-        pinchZoom: true
-      };
-      const containerOpts = {
-        ...containerOptsDefault,
-        ...(opts.containerOpts ?? {}),
-      };
-      const wcContainer = root.container.children.push(
-        am5.ZoomableContainer.new(root, containerOpts));
-      // #ZoomTools
-      const toolsOpts = {
-        ...(opts.toolsOpts ?? {}),
-        ...{ target: wcContainer },
-      };
-      const wcTools = wcContainer.children.push(am5.ZoomTools.new(root, toolsOpts));
-    }
-    // ############
-    // #WordCloud
-    // ############
+
     const chartOpts = this.chartOpts ?? {};
-    const defaultLabelOpts = {
-      _colors: { tone: "default" },
-    };
-    const wcOpts = chartOpts.wordcloud ?? {
+    const defaultWordcloudOpts = {
       categoryField: "category",
       valueField: "value",
       angles: [0, -90],
-      labels: { ...defaultLabelOpts },
+      labels: {
+        _colors: {
+          tone: "default"
+        },
+      },
     };
-    const wordcloudOpts = {
-      ...wcOpts,
-      ...(opts.wordcloudOpts ?? {}),
-    };
-    const labelOpts = wordcloudOpts.labels ?? { ...defaultLabelOpts };
-    const colorOpts = labelOpts._colors ?? { ...defaultLabelOpts._colors };
-    const toneCS = ["custom", "default"];
-    const toneWithColorSet = toneCS.indexOf(colorOpts.tone) !== -1;
+    const wcOpts = AMC.deepMerge(defaultWordcloudOpts, chartOpts.wordcloud ?? {});
+
+    const labelOpts = wcOpts.labels ?? defaultWordcloudOpts.labels;
+    const colorOpts = labelOpts._colors ?? defaultWordcloudOpts.labels._colors;
+    const tonesWithColorSet = ["custom", "default"];
+
+    /** @type {boolean} */
+    const isToneWithColorSet = tonesWithColorSet.includes(colorOpts.tone ?? '');
+
+    /** @type {array} */
     const customColors = colorOpts.custom ?? [];
+
     const colorSetParams = {};
     if (colorOpts.tone === "custom" && customColors.length) {
       colorSetParams.colors = [];
-      customColors.forEach((value) => {
-        colorSetParams.colors.push(am5.color(value))
-      });
+      customColors.forEach(val => colorSetParams.colors.push(am5.color(val)));
     }
+    const bgColor = wcOpts.isDarkmode ? '#272822' : (wcOpts.background ?? undefined);
+    const background = bgColor
+      ? am5.Rectangle.new(root, {
+          fill: am5.color(bgColor),
+          fillOpacity: wcOpts.backgroundOpacity ?? 1,
+        })
+      : undefined;
+
     // @see https://www.amcharts.com/docs/v5/reference/wordcloud/#Settings
     const wcParams = {
-      categoryField: `${wordcloudOpts.categoryField ?? "category"}`,
-      valueField: `${wordcloudOpts.valueField ?? "value"}`,
-      angles: wordcloudOpts.angles ?? [0, -90],
-      ...(wordcloudOpts.background
-        ? {
-          background: am5.Rectangle.new(root, {
-            fill: am5.color(wordcloudOpts.background),
-            fillOpacity: wordcloudOpts.backgroundOpacity ?? 1,
-          })
-        }
-        : {}
-      ),
-      ...(colorOpts.tone === "heat"
-        ? { calculateAggregates: true }
-        : {}),
-      ...(toneWithColorSet
+      background,
+      categoryField: wcOpts.categoryField,
+      valueField: wcOpts.valueField,
+      angles: wcOpts.angles ?? [0],
+      // shapeTolerance: 0.85,
+      // randomness: 0,
+      // minFontSize: am5.percent(2),
+      // maxFontSize: am5.percent(45),
+      ...(colorOpts.tone === "heat" ? { calculateAggregates: true } : {}),
+      ...(isToneWithColorSet
         ? { colors: am5.ColorSet.new(root, colorSetParams) }
         : {}),
     };
