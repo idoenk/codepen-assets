@@ -1696,18 +1696,22 @@ class AMCHandler {
         xAxis: xAxis,
         yAxis: yAxis,
         valueYField: field,
-        categoryXField: `${xAxisOpts.categoryField}`,
         tooltip: am5.Tooltip.new(root, {
           labelText: "{name}: [bold]{valueY}[/]"
         }),
+        ...(isDateXAxis
+          ? {valueXField: xAxisOpts.categoryField ?? "date"}
+          : {categoryXField: `${xAxisOpts.categoryField}`}),
+        clustered: true,
       }));
       amc.setSeriesTemplate(series);
+      if (isDateXAxis) amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
-      const categoryField = isDateXAxis
+      const valueXPlaceholder = isDateXAxis
         ? "valueX.formatDate('dd MMM, yyyy')"
         : "categoryX";
       const tooltipText = isCursorEnabled
-        ? `{name} on {${categoryField}}:{valueY}`
+        ? `{name} on {${valueXPlaceholder}}:{valueY}`
         : undefined;
       let columnGap = xAxisOpts.columnGap ? parseInt(xAxisOpts.columnGap) : 0;
       columnGap = columnGap < 0 || columnGap > 100 ? 0 : columnGap;
