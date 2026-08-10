@@ -260,7 +260,6 @@ class AMCHandler {
 
     // Apply templateField to columns of chart.series (instance of am5xy.ColumnSeries)
     (() => {
-      console.log('in Apply templateField to columns of chart.');
       chart.series.each(series => {
       if (series instanceof am5xy.ColumnSeries) {
         series.columns?.template?.setAll({
@@ -1334,7 +1333,7 @@ class AMCHandler {
     const legend = amc.setLegend();
     if (legend) {
       legend.data.setAll(chart.series.values);      
-      legend.appear(500);
+      legend.appear(AMCData.SERIES_FADE_IN);
     }
 
     return this.triggerChartAppearance();
@@ -1543,7 +1542,6 @@ class AMCHandler {
     const createSeries = (name, field) => {
       const series = chart.series.push(am5xy.ColumnSeries.new(root, {
         name,
-        // ...(colorOpts ? colorOpts : {}),
         xAxis: xAxis,
         yAxis: yAxis,
         valueYField: field,
@@ -1558,19 +1556,19 @@ class AMCHandler {
         width: am5.percent(100),
       });
 
+      series.appear(AMCData.SERIES_FADE_IN);
+
+      const legend = amc.setLegend();
+      if (legend) {
+        legend.data.setAll(chart.series.values);
+        legend.appear(AMCData.SERIES_FADE_IN);
+      }
+
       return series;
     };
 
     itemsData.forEach((item) => {
-      const setting = item.settings ?? null;
-      // const colorOpts = setting && setting.stroke
-      //   ? {
-      //       stroke: am5.color(setting.stroke),
-      //       fill: am5.color(setting.fill ?? setting.stroke),
-      //     }
-      //   : undefined;
       const series = createSeries(item.label, item.ch_key);
-      series.appear(AMCData.SERIES_FADE_IN);
     });
 
     return this.triggerChartAppearance();
@@ -1613,8 +1611,11 @@ class AMCHandler {
       renderer: yRenderer,
     });
 
+    const seriesOpts = chartOpts.series ?? {};
+    const name = seriesOpts.name ?? 'Series';
+
     const series = chart.series.push(am5xy.ColumnSeries.new(root, {
-      name: "Series",
+      name,
       xAxis: xAxis,
       yAxis: yAxis,
       valueYField: "value",
@@ -1636,6 +1637,12 @@ class AMCHandler {
 
     series.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
+
+    const legend = amc.setLegend();
+    if (legend) {
+      legend.data.setAll(chart.series.values);
+      legend.appear(AMCData.SERIES_FADE_IN);
+    }
 
     return this.triggerChartAppearance();
   }
@@ -4494,8 +4501,6 @@ class AMC {
         if (item) {
           const val = item.get(axisValue, 0);
 
-          // White text if inside the bar, dark gray if outside
-          // return (val / baseMax > 0.8) ? am5.color(0xffffff) : am5.color(0x333333);
           return (val / baseMax > 0.8) ? labelInnerFill : labelOuterFill;
         }
         return fill;
