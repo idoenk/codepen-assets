@@ -1709,9 +1709,7 @@ class AMCHandler {
       const tooltipText = isCursorEnabled
         ? `{name} on {${categoryField}}:{valueY}`
         : undefined;
-      let columnGap = xAxisOpts.columnGap
-        ? (100 - parseInt(xAxisOpts.columnGap))
-        : 0;
+      let columnGap = xAxisOpts.columnGap ? parseInt(xAxisOpts.columnGap) : 0;
       columnGap = columnGap < 0 || columnGap > 100 ? 0 : columnGap;
       series.columns.template.setAll({
         tooltipText,
@@ -1721,17 +1719,15 @@ class AMCHandler {
 
       series.appear(AMCData.SERIES_FADE_IN);
 
-      const legend = amc.setLegend();
-      if (legend) {
-        legend.data.setAll(chart.series.values);
-        legend.appear(AMCData.SERIES_FADE_IN);
-      }
-
       return series;
     };
-    itemsData.forEach((item) => {
-      const series = createSeries(item.label, item.ch_key);
-    });
+    itemsData.forEach(item => createSeries(item.label, item.ch_key));
+
+    const legend = amc.setLegend();
+    if (legend) {
+      legend.data.setAll(chart.series.values);
+      legend.appear(AMCData.SERIES_FADE_IN);
+    }
 
     return this.triggerChartAppearance();
   }
