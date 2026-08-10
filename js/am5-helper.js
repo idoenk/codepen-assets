@@ -2479,9 +2479,9 @@ class AMCData {
    * @returns {object}
    */
   static parseItemDataSettings(item) {
-    if (item.data_settings) {
+    if (item.data_settings || item.color) {
       ['fill', 'stroke'].forEach(it => {
-        const itemColor = item.data_settings[it] ?? null;
+        const itemColor = item.data_settings[it] ?? item.color ?? null;
         if (!itemColor) return !0;
 
         const parsedColor = AMC.parseColorAndOpacity(itemColor);
@@ -3990,7 +3990,7 @@ class AMCData {
         data_settings: dto?.data_settings ?? meta?.data_settings ?? undefined,
       };
 
-      if (item.data_settings) {
+      if (item.data_settings || item.color) {
         item = AMCData.parseItemDataSettings(item);
       }
 
@@ -4047,12 +4047,13 @@ class AMCData {
         category: it.label,
         value: it.review_count ?? 0,
         avatar: it.avatar ?? '',
+        color: it.color ?? '',
         data_settings: it.data_settings ?? undefined,
       };
     });
     data.sort((a, b) => b.value - a.value);
 
-    if (data.data_settings) {
+    if (data.data_settings || data.color) {
       data = AMCData.parseItemDataSettings(data);
     }
 
@@ -4084,11 +4085,12 @@ class AMCData {
         category: dto.slug ?? it.label ?? it.name ?? it.key ?? 'n/a',
         value: dto.total ?? it.value ?? it.doc_count ?? 0,
         avatar: it.avatar ?? '',
+        color: it.color ?? '',
         data_settings: it.data_settings ?? undefined,
       };
     });
 
-    if (data.data_settings) {
+    if (data.data_settings || data.color) {
       data = AMCData.parseItemDataSettings(data);
     }
 
