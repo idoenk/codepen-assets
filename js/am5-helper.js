@@ -260,6 +260,7 @@ class AMCHandler {
 
     // Apply templateField to columns of chart.series (instance of am5xy.ColumnSeries)
     (() => {
+      console.log('in Apply templateField to columns of chart.');
       chart.series.each(series => {
       if (series instanceof am5xy.ColumnSeries) {
         series.columns?.template?.setAll({
@@ -1200,7 +1201,14 @@ class AMCHandler {
         });
       })
 
-      series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
+      const valueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      /** @type {boolean} */
+      const showValueLabels = valueLabelsOpts.enabled ?? true;
+
+      if (showValueLabels) {
+        series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
+      }
 
       return series;
     }
@@ -1307,7 +1315,15 @@ class AMCHandler {
         height: am5.p100,
         strokeOpacity: 1
       });
-      series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
+
+      const valueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      /** @type {boolean} */
+      const showValueLabels = valueLabelsOpts.enabled ?? true;
+
+      if (showValueLabels) {
+        series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
+      }
 
       return series;
     }
@@ -1524,10 +1540,10 @@ class AMCHandler {
       }),
     });
 
-    const createSeries = (name, field, colorOpts) => {
+    const createSeries = (name, field) => {
       const series = chart.series.push(am5xy.ColumnSeries.new(root, {
         name,
-        ...(colorOpts ? colorOpts : {}),
+        // ...(colorOpts ? colorOpts : {}),
         xAxis: xAxis,
         yAxis: yAxis,
         valueYField: field,
@@ -1547,13 +1563,13 @@ class AMCHandler {
 
     itemsData.forEach((item) => {
       const setting = item.settings ?? null;
-      const colorOpts = setting && setting.stroke
-        ? {
-            stroke: am5.color(setting.stroke),
-            fill: am5.color(setting.fill ?? setting.stroke),
-          }
-        : undefined;
-      const series = createSeries(item.label, item.ch_key, colorOpts);
+      // const colorOpts = setting && setting.stroke
+      //   ? {
+      //       stroke: am5.color(setting.stroke),
+      //       fill: am5.color(setting.fill ?? setting.stroke),
+      //     }
+      //   : undefined;
+      const series = createSeries(item.label, item.ch_key);
       series.appear(AMCData.SERIES_FADE_IN);
     });
 
@@ -1608,7 +1624,15 @@ class AMCHandler {
         labelText: "{valueY}"
       })
     }));
-    series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts, 'vertical'));
+
+    const valueLabelsOpts = chartOpts.valueLabels ?? {};
+
+    /** @type {boolean} */
+    const showValueLabels = valueLabelsOpts.enabled ?? true;
+
+    if (showValueLabels) {
+      series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts, 'vertical'));
+    }
 
     series.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
@@ -2756,6 +2780,11 @@ class AMCData {
               fillOpacity: 0.1,
             },
             // ...(merge.series ?? {}),
+          },
+          valueLabels: {
+            enabled: undefined, // Whether show value label
+            outerFill: undefined, // Label fill color outside bar. Default: 0x333333
+            innerFill: undefined, // Label fill color inside bar. Default: 0xffffff
           },
           ...xAxis,
           ...yAxis,
@@ -3937,7 +3966,6 @@ class AMCData {
           value: (dto.metric ?? {})[metricField] ?? meta[metricField] ?? 0,
           avatar: user.avatar_cache ?? user.avatar ?? meta.from_avatar ?? "",
           color: dto.color ?? meta.color ?? "",
-          data_settings: dto.data_settings ?? meta.data_settings ?? undefined,
         };
       }
       else {
@@ -3948,6 +3976,12 @@ class AMCData {
           avatar: meta.from_avatar ?? "",
         };
       }
+
+      item = {
+        ...item,
+        color: dto?.color ?? meta?.color ?? "",
+        data_settings: dto?.data_settings ?? meta?.data_settings ?? undefined,
+      };
 
       if (item.data_settings) {
         item = AMCData.parseItemDataSettings(item);
@@ -4362,78 +4396,6 @@ class AMC {
   };
 
   /**
-   * @deprecated @see self::createAdaptiveLabelRenderer
-   * Generate label bullet function for horizontal bar chart
-   * Used in: horizontalColumnTopMetric, horizontalColumnTopReviews
-   * @param {object} chartOpts
-   * {
-   *  ?labelFontSize: {number|string}
-   * }
-   * @return {Function}
-   */
-  static horizontalBarLabel(chartOpts) {
-    chartOpts = chartOpts || {};
-    const fontSize = chartOpts.labelFontSize ?? undefined;
-
-    return function(root, series, dataItem) {
-      let label = am5.Label.new(root, {
-        centerY: am5.p50,
-        text: "{valueX}",
-        fontSize,
-        populateText: true
-      });
-
-      // Dynamically adjust anchor position (centerX)
-      label.adapters.add("centerX", function(centerX, target) {
-        let item = target.dataItem;
-        if (item) {
-          let axis = series.get("xAxis");
-          // Get the current max value of the X axis dynamically
-          let max = axis.getPrivate("max", 1);
-          let val = item.get("valueX", 0);
-
-          // If bar width is > 80% of the axis max, flip label inside
-          return (val / max > 0.8) ? am5.p100 : am5.p0;
-        }
-        return centerX;
-      });
-
-      // Dynamically adjust spacing/padding (dx)
-      label.adapters.add("dx", function(dx, target) {
-        let item = target.dataItem;
-        if (item) {
-          let axis = series.get("xAxis");
-          let max = axis.getPrivate("max", 1);
-          let val = item.get("valueX", 0);
-
-          // Push 5px left (inside) or 5px right (outside)
-          return (val / max > 0.8) ? -5 : 5;
-        }
-        return dx;
-      });
-
-      // Dynamically adjust text color for contrast
-      label.adapters.add("fill", function(fill, target) {
-        let item = target.dataItem;
-        if (item) {
-          let axis = series.get("xAxis");
-          let max = axis.getPrivate("max", 1);
-          let val = item.get("valueX", 0);
-
-          // White text if inside the bar, dark gray if outside
-          return (val / max > 0.8) ? am5.color(0xffffff) : am5.color(0x333333);
-        }
-        return fill;
-      });
-
-      return am5.Bullet.new(root, {
-        locationX: 1, // Always attach to the end of the bar
-        sprite: label
-      });
-    };
-  }
-
-  /**
    * Creates a rendering callback function for adaptive bar chart labels.
    * The generated function dynamically positions the label outside the bar (with dark text).
    * If there is insufficient space, it moves the value inside the bar (with light text).
@@ -4451,7 +4413,6 @@ class AMC {
   static createAdaptiveLabelRenderer(chartOpts, orientation = 'horizontal') {
     chartOpts = chartOpts || {};
     orientation = orientation || 'horizontal';
-    const fontSize = chartOpts.labelFontSize ?? undefined;
 
     return function(root, series, dataItem) {
       const isHorizontal = orientation === 'horizontal';
@@ -4463,6 +4424,32 @@ class AMC {
       const axisLabelAdapterCenter = isHorizontal ? 'centerX' : 'centerY';
       const axisLabelAdapterSpacing = isHorizontal ? 'dx' : 'dy';
       const axisLocation = isHorizontal ? 'locationX' : 'locationY';
+
+      const valueLabelOpts = chartOpts.valueLabels ?? {};
+
+      const fontSize = valueLabelOpts.fontSize ?? chartOpts.labelFontSize ?? undefined;
+
+      /**
+       * Get outer label fill color
+       * @return {am5.Color}
+       */
+      const labelOuterFill = (() => {
+        const colorObj = valueLabelOpts.outerFill
+          ? AMC.parseColorAndOpacity(valueLabelOpts.outerFill)
+          : undefined;
+        return colorObj ? colorObj.color : am5.color(0x333333);
+      })();
+
+      /**
+       * Get inner label fill color
+       * @return {am5.Color}
+       */
+      const labelInnerFill = (() => {
+        const colorObj = valueLabelOpts.innerFill
+          ? AMC.parseColorAndOpacity(valueLabelOpts.innerFill)
+          : undefined;
+        return colorObj ? colorObj.color : am5.color(0xffffff);
+      })();
 
       let label = am5.Label.new(root, {
         [axisLabelCenter]: am5.p50,
@@ -4508,7 +4495,8 @@ class AMC {
           const val = item.get(axisValue, 0);
 
           // White text if inside the bar, dark gray if outside
-          return (val / baseMax > 0.8) ? am5.color(0xffffff) : am5.color(0x333333);
+          // return (val / baseMax > 0.8) ? am5.color(0xffffff) : am5.color(0x333333);
+          return (val / baseMax > 0.8) ? labelInnerFill : labelOuterFill;
         }
         return fill;
       });
