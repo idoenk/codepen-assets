@@ -1648,6 +1648,95 @@ class AMCHandler {
   }
 
   /**
+   * Render Vertical Clustered Column
+   * @param {array} rawData
+   */
+  verticalClusteredColumn(rawData) {
+    this.initialize();
+    const seriesData = AMCData.get('seriesDataVerticalClusteredColumn', rawData);
+    const itemsData = AMCData.get('itemsDataVerticalClusteredColumn', rawData);
+
+    const chartOpts = this.chartOpts;
+    const amc = this.getAmc(this.chartId, {chartOpts});
+    const root = amc.createRoot();
+    const chart = amc.createXYChart(root, {
+      paddingLeft: 10,
+    });
+    amc.setCursor(chart, { behavior: "none" });
+
+    const xAxisOpts = chartOpts.xAxis ?? {};
+    const isDateXAxis = !!(xAxisOpts.isDateAxis ?? false);
+    const cursorOpts = chartOpts.cursor ?? {};
+    const isCursorEnabled = !!(cursorOpts.enabled ?? true);
+    const xRenderer = am5xy.AxisRendererX.new(root, {
+      cellStartLocation: .1,
+      cellEndLocation: .9,
+      minorGridEnabled: true
+    });
+    const xAxis = isDateXAxis
+      ? amc.setXDateAxis(chart, {
+          renderer: xRenderer,
+        })
+      : amc.setXCategoryAxis(chart, {
+          renderer: xRenderer,
+          categoryXField: `${xAxisOpts.categoryField}`,
+        });
+    xAxis.data.setAll(seriesData);
+
+    const yAxis = amc.setYAxis(chart, {
+      maxDeviation: 0.3,
+      renderer: am5xy.AxisRendererY.new(root, {
+        strokeOpacity: 0.1
+      }),
+    });
+
+    const createSeries = (name, field) => {
+      const series = chart.series.push(am5xy.ColumnSeries.new(root, {
+        name,
+        xAxis: xAxis,
+        yAxis: yAxis,
+        valueYField: field,
+        categoryXField: `${xAxisOpts.categoryField}`,
+        tooltip: am5.Tooltip.new(root, {
+          labelText: "{name}: [bold]{valueY}[/]"
+        }),
+      }));
+      amc.setSeriesTemplate(series);
+      amc.setBullets(series, seriesData);
+      const categoryField = isDateXAxis
+        ? "valueX.formatDate('dd MMM, yyyy')"
+        : "categoryX";
+      const tooltipText = isCursorEnabled
+        ? `{name} on {${categoryField}}:{valueY}`
+        : undefined;
+      let columnGap = xAxisOpts.columnGap
+        ? (100 - parseInt(xAxisOpts.columnGap))
+        : 0;
+      columnGap = columnGap < 0 || columnGap > 100 ? 0 : columnGap;
+      series.columns.template.setAll({
+        tooltipText,
+        tooltipY: 0,
+        width: am5.percent(100 - columnGap),
+      });
+
+      series.appear(AMCData.SERIES_FADE_IN);
+
+      const legend = amc.setLegend();
+      if (legend) {
+        legend.data.setAll(chart.series.values);
+        legend.appear(AMCData.SERIES_FADE_IN);
+      }
+
+      return series;
+    };
+    itemsData.forEach((item) => {
+      const series = createSeries(item.label, item.ch_key);
+    });
+
+    return this.triggerChartAppearance();
+  }
+
+  /**
    * Render smooth line of issues thumbnail
    * @param {array} rawData
    * @param {string} datatype Default: platform
@@ -3319,6 +3408,87 @@ class AMCData {
     });
 
     return Object.keys(keyedData).map((ch_key) => ({
+      ch_key,
+      label: keyedData[ch_key]
+    }));
+  }
+
+  /**
+   * Transform given data for series of Clustered Column
+   * @param {array} rawData of:
+   * [
+   *   {
+   *     [category|date]: {string|int},
+   *     series: {array} of:
+   *     [
+   *       {
+   *         key: {string},
+   *         label: {string},
+   *         doc_count: {int},
+   *       },
+   *     ],
+   *   },
+   * ]
+   * @return {array} of:
+   * [
+   *   {
+   *     [category|date]: {int|string},
+   *     [name_key]: {int|string},
+   *   },
+   * ]
+   */
+  seriesDataVerticalClusteredColumn(rawData) {
+    return rawData.map(item => {
+      const clonedItem = {...item};
+      const keyedSeries = {};
+      [...(clonedItem.series ?? [])].forEach(it => {
+        const key = it.key ?? it.name ?? null;
+        if (!key) return !0;
+        keyedSeries[key] = it.doc_count ?? it.value ?? 0;
+      });
+      delete clonedItem.series;
+      return {...clonedItem, ...keyedSeries};
+    });
+  }
+
+  /**
+   * Transform given data for items of Clustered Column
+   * @param {array} rawData of:
+   * [
+   *   {
+   *     [category|date]: {string|int},
+   *     series: {array} of:
+   *     [
+   *       {
+   *         key: {string},
+   *         label: {string},
+   *         doc_count: {int},
+   *       },
+   *     ],
+   *   },
+   * ]
+   * @return {array} of:
+   * [
+   *   {
+   *     [ch_key]: {string},
+   *     label: {string},
+   *   },
+   * ]
+   */
+  itemsDataVerticalClusteredColumn(rawData) {
+    const keyedData = {};
+    rawData.forEach(item => {
+      item.series?.forEach(it => {
+        const ch_key = it.key ?? it.name ?? null;
+        if (!ch_key) return !0;
+        const isKeyed = ch_key &&
+          "undefined" !== typeof keyedData[ch_key];
+        if (isKeyed) return !0;
+        keyedData[ch_key] = it.label ?? it.name ?? it.key ?? '';
+      });
+    });
+    
+    return Object.keys(keyedData).map(ch_key => ({
       ch_key,
       label: keyedData[ch_key]
     }));
