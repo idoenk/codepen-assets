@@ -2480,6 +2480,8 @@ class AMCData {
    */
   static parseItemDataSettings(item) {
     if (item.data_settings || item.color) {
+      item.data_settings = item.data_settings ?? {};
+
       ['fill', 'stroke'].forEach(it => {
         const itemColor = item.data_settings[it] ?? item.color ?? null;
         if (!itemColor) return !0;
@@ -3972,7 +3974,6 @@ class AMCData {
           category: dto.text ?? dto.key ?? "",
           value: (dto.metric ?? {})[metricField] ?? meta[metricField] ?? 0,
           avatar: user.avatar_cache ?? user.avatar ?? meta.from_avatar ?? "",
-          color: dto.color ?? meta.color ?? "",
         };
       }
       else {
@@ -3989,10 +3990,7 @@ class AMCData {
         color: dto?.color ?? meta?.color ?? "",
         data_settings: dto?.data_settings ?? meta?.data_settings ?? undefined,
       };
-
-      if (item.data_settings || item.color) {
-        item = AMCData.parseItemDataSettings(item);
-      }
+      item = AMCData.parseItemDataSettings(item);
 
       const maxLen = 100;
       const catLen = `${item.category}`.length;
@@ -4042,20 +4040,17 @@ class AMCData {
    * ]
    */
   seriesDataHorizontalColumnTopReviews(rawData) {
-    let data = rawData.map(it => {
-      return {
+    const data = rawData.map(it => {
+      const item = {
         category: it.label,
         value: it.review_count ?? 0,
         avatar: it.avatar ?? '',
         color: it.color ?? '',
         data_settings: it.data_settings ?? undefined,
       };
+      return AMCData.parseItemDataSettings(item);
     });
     data.sort((a, b) => b.value - a.value);
-
-    if (data.data_settings || data.color) {
-      data = AMCData.parseItemDataSettings(data);
-    }
 
     /** @type {string[]} */
     const cachedCategories = [];
@@ -4081,18 +4076,16 @@ class AMCData {
   seriesDataVerticalColumnCategory(rawData) {
     const data = rawData.map(it => {
       const dto = it.dto ?? it;
-      return {
+      const item = {
         category: dto.slug ?? it.label ?? it.name ?? it.key ?? 'n/a',
         value: dto.total ?? it.value ?? it.doc_count ?? 0,
         avatar: it.avatar ?? '',
-        color: it.color ?? '',
-        data_settings: it.data_settings ?? undefined,
+        color: dto.color ?? it.color ?? '',
+        data_settings: dto.data_settings ?? it.data_settings ?? undefined,
       };
-    });
 
-    if (data.data_settings || data.color) {
-      data = AMCData.parseItemDataSettings(data);
-    }
+      return AMCData.parseItemDataSettings(item);
+    });
 
     /** @type {string[]} */
     const cachedCategories = [];
@@ -4424,6 +4417,12 @@ class AMC {
     orientation = orientation || 'horizontal';
 
     return function(root, series, dataItem) {
+      const dataSettings = dataItem.dataContext?.data_settings ?? {};
+      const valueLabelsOpts = dataSettings.valueLabels ?? {};
+
+      // Value labels is forced to not visible for this dataItem
+      if (valueLabelsOpts.enabled === false) return undefined;
+
       const isHorizontal = orientation === 'horizontal';
       const baseAxis = series.get(isHorizontal ? 'xAxis' : 'yAxis');
       const baseMax = baseAxis.getPrivate("max", 1);
@@ -4442,7 +4441,7 @@ class AMC {
        * Get outer label fill color
        * @return {am5.Color}
        */
-      const labelOuterFill = (() => {
+      let labelOuterFill = (() => {
         const colorObj = valueLabelOpts.outerFill
           ? AMC.parseColorAndOpacity(valueLabelOpts.outerFill)
           : undefined;
@@ -4453,7 +4452,7 @@ class AMC {
        * Get inner label fill color
        * @return {am5.Color}
        */
-      const labelInnerFill = (() => {
+      let labelInnerFill = (() => {
         const colorObj = valueLabelOpts.innerFill
           ? AMC.parseColorAndOpacity(valueLabelOpts.innerFill)
           : undefined;
@@ -4501,8 +4500,20 @@ class AMC {
       label.adapters.add("fill", function(fill, target) {
         const item = target.dataItem;
         if (item) {
+          const labelOpts = item.dataContext?.data_settings?.valueLabelOpts ?? {};
+          labelInnerFill = (() => {
+            const colorObj = labelOpts?.innerFill
+              ? AMC.parseColorAndOpacity(labelOpts.innerFill)
+              : undefined;
+            return colorObj ? colorObj.color : labelInnerFill;
+          })();
+          labelOuterFill = (() => {
+            const colorObj = labelOpts?.outerFill
+              ? AMC.parseColorAndOpacity(labelOpts.outerFill)
+              : undefined;
+            return colorObj ? colorObj.color : labelOuterFill;
+          })();
           const val = item.get(axisValue, 0);
-
           return (val / baseMax > 0.8) ? labelInnerFill : labelOuterFill;
         }
         return fill;
