@@ -4027,20 +4027,20 @@ class AMCData {
       const highlightOpts = labelOpts._colors.highlight ?? {};
 
       /** @type {number} */
-      const limitTopN = (() => {
-        let val = parseInt(highlightOpts.topN ?? 0);
+      const limitTopCount = (() => {
+        let val = parseInt(highlightOpts.topCount ?? 0);
         return val > 0 ? val : 0;
       })();
 
       /** @type {am5.Color} */
-      const highlightColor = (() => {
-        let colorVal = highlightOpts.highlightColor || '#ff1e1e'
+      const topColor = (() => {
+        let colorVal = highlightOpts.topColor || '#1e26ff'
         return AMC.parseColorAndOpacity(colorVal).color;
       })();
 
       /** @type {am5.Color} */
       const baseColor = (() => {
-        let colorVal = highlightOpts.baseColor || '#666666'
+        let colorVal = highlightOpts.baseColor || '#cccccc'
         return AMC.parseColorAndOpacity(colorVal).color;
       })();
 
@@ -4048,7 +4048,7 @@ class AMCData {
         return {
           ...item,
           labelSettings: {
-            fill: index < limitTopN ? highlightColor : baseColor,
+            fill: index < limitTopCount ? topColor : baseColor,
           }
         };
       });
