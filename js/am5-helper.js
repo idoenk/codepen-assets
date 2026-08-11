@@ -3442,9 +3442,19 @@ class AMCData {
       const clonedItem = {...item};
       const keyedSeries = {};
       [...(clonedItem.series ?? [])].forEach(it => {
-        const key = it.key ?? it.name ?? null;
+        /** @type {string|null} */
+        const key = (() => {
+          /** @type {string|undefined} */
+          const keyField = ['key', 'name', 'slug', 'label']
+            .find(k => it[k]
+              ? `${it[k].trim().replace(/\W/g, '').toLowerCase()}`
+              : null);
+          return keyField ? it[keyField] : null;
+        })();
         if (!key) return !0;
-        keyedSeries[key] = it.doc_count ?? it.value ?? 0;
+        /** @type {number} */
+        const value = Number(it.doc_count || it.value || 0);
+        keyedSeries[key] = !isNaN(value) ? value : 0;
       });
       delete clonedItem.series;
       return {...clonedItem, ...keyedSeries};
@@ -3479,12 +3489,25 @@ class AMCData {
     const keyedData = {};
     rawData.forEach(item => {
       item.series?.forEach(it => {
-        const ch_key = it.key ?? it.name ?? null;
-        if (!ch_key) return !0;
-        const isKeyed = ch_key &&
-          "undefined" !== typeof keyedData[ch_key];
+        const key = (() => {
+          /** @type {string|undefined} */
+          const itemField = ['key', 'slug', 'name', 'label']
+            .find(k => it[k]
+              ? `${it[k].trim().replace(/\W/g, '').toLowerCase()}`
+              : null);
+          return itemField ? it[itemField] : null;
+        })();
+        if (!key) return !0;
+
+        const isKeyed = key && "undefined" !== typeof keyedData[key];
         if (isKeyed) return !0;
-        keyedData[ch_key] = it.label ?? it.name ?? it.key ?? '';
+        const label = (() => {
+          /** @type {string|undefined} */
+          const itemField = ['label', 'name', 'slug', 'key']
+            .find(k => it[k] ? `${it[k].trim()}` : null);
+          return itemField ? it[itemField] : key;
+        })();
+        keyedData[key] = label;
       });
     });
     
@@ -4626,7 +4649,7 @@ class AMC {
         const colorObj = valueLabelOpts.innerFill
           ? AMC.parseColorAndOpacity(valueLabelOpts.innerFill)
           : undefined;
-        return colorObj ? colorObj.color : am5.color(0xffffff);
+        return colorObj ? colorObj.color : am5.color(0x000000);
       })();
 
       let label = am5.Label.new(root, {
