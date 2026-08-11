@@ -4016,11 +4016,42 @@ class AMCData {
         });
     }
 
-    // Filter: by maxCount
-    if (maxCount) {
-      seriesData = seriesData
-        .sort((a, b) => b.value - a.value)
-        .slice(0, maxCount);
+    seriesData = seriesData.sort((a, b) => b.value - a.value);
+
+    // Limit by maxCount
+    if (maxCount) seriesData = seriesData.slice(0, maxCount);
+
+    const labelOpts = wordcloudOpts.labels ?? {};
+
+    if (labelOpts._colors?.tone === 'highlight') {
+      const highlightOpts = labelOpts._colors.highlight ?? {};
+
+      /** @type {number} */
+      const limitTopN = (() => {
+        let val = parseInt(highlightOpts.topN ?? 0);
+        return val > 0 ? val : 0;
+      })();
+
+      /** @type {am5.Color} */
+      const highlightColor = (() => {
+        let colorVal = highlightOpts.highlightColor || '#ff1e1e'
+        return AMC.parseColorAndOpacity(colorVal).color;
+      })();
+
+      /** @type {am5.Color} */
+      const baseColor = (() => {
+        let colorVal = highlightOpts.baseColor || '#666666'
+        return AMC.parseColorAndOpacity(colorVal).color;
+      })();
+
+      seriesData = seriesData.map((item, index) => {
+        return {
+          ...item,
+          labelSettings: {
+            fill: index < limitTopN ? highlightColor : baseColor,
+          }
+        };
+      });
     }
 
     return seriesData;
@@ -4511,8 +4542,14 @@ class AMC {
    * @return {{ color: am5.Color, opacity: number }}
    */
   static parseColorAndOpacity(colorInput, fallbackColor) {
+    fallbackColor = fallbackColor ?? '#000000';
     let opacity = 1;
     let baseColor = String(colorInput || fallbackColor).trim().toLowerCase();
+
+    // Auto correct hex without "#"
+    baseColor = !baseColor.startsWith('rgb') && !baseColor.startsWith('#')
+      ? `#${baseColor}`
+      : baseColor;
 
     if (baseColor.startsWith('#')) {
       const hex = baseColor.substring(1);
@@ -5674,21 +5711,29 @@ class AMC {
 
     const labelOpts = wcOpts.labels ?? defaultWordcloudOpts.labels;
     const colorOpts = labelOpts._colors ?? defaultWordcloudOpts.labels._colors;
-    const tonesWithColorSet = ["custom", "default"];
+    const tonesWithColorSet = ["default", "custom", "mono"];
 
     /** @type {boolean} */
     const isToneWithColorSet = tonesWithColorSet.includes(colorOpts.tone ?? '');
 
     /** @type {array} */
-    const customColors = colorOpts.custom ?? [];
+    const customColors = colorOpts.tone === "custom"
+      ? (colorOpts.custom ?? [])
+      : (colorOpts.tone === "mono"
+        ? (colorOpts.mono ? [colorOpts.mono] : [])
+        : []);
 
     const colorSetParams = {};
-    if (colorOpts.tone === "custom" && customColors.length) {
+    if (customColors.length) {
       colorSetParams.colors = [];
-      customColors.forEach(val => colorSetParams.colors.push(am5.color(val)));
+      customColors
+        .forEach(val => {
+          const parsed = AMC.parseColorAndOpacity(val);
+          if (parsed) colorSetParams.colors.push(parsed.color);
+        });
     }
     const bgColorInput = wcOpts.isDarkmode ? '#272822' : (wcOpts.background ?? undefined);
-    const bgOpacityInput = wcOpts.backgroundOpacity ?? undefined;
+    const bgOpacityInput = wcOpts.backgroundOpacity || undefined;
 
     /** @type {object|undefined} */
     const parsedBgColor = bgColorInput
@@ -5698,7 +5743,7 @@ class AMC {
     const background = parsedBgColor
       ? am5.Rectangle.new(root, {
           fill: parsedBgColor.color,
-          fillOpacity: bgOpacityInput ?? parsedBgColor.opacity,
+          fillOpacity: bgOpacityInput || parsedBgColor.opacity,
         })
       : undefined;
 
@@ -5798,6 +5843,15 @@ class AMC {
       }]);
     }
     // ############
+    // # highlight
+    // ############
+    else if (colorOpts.tone === 'highlight') {
+      series.labels.template.setAll({
+        templateField: "labelSettings",
+      });
+    }
+
+    // ############
     // # onclick
     // ############
     const onClick = wcOpts.onclick ?? null;
@@ -5825,6 +5879,7 @@ class AMC {
         onClick(e)
       });
     }
+
     // #############
     // #hover-effect
     // #############
