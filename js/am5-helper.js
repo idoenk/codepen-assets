@@ -1568,7 +1568,7 @@ class AMCHandler {
     };
 
     itemsData.forEach((item) => {
-      const series = createSeries(item.label, item.ch_key);
+      createSeries(item.label, item.ch_key);
     });
 
     return this.triggerChartAppearance();
@@ -1612,7 +1612,7 @@ class AMCHandler {
     });
 
     const seriesOpts = chartOpts.series ?? {};
-    const name = seriesOpts.name ?? 'Series';
+    const name = seriesOpts.name ?? 'Total';
 
     const series = chart.series.push(am5xy.ColumnSeries.new(root, {
       name,
@@ -5318,7 +5318,8 @@ class AMC {
         width: align === "center" ? "auto" : am5.percent(100),
         x: align === "center" ? am5.percent(50) : am5.percent(wPerc),
         centerX: am5.percent(align === "center" ? 50 : 0),
-        y: am5.percent(100),
+        // y: am5.percent(100),
+        y: am5.percent(96),
         centerY: am5.percent(100),
       };
     }
