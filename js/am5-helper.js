@@ -520,8 +520,12 @@ class AMCHandler {
         : undefined;
       return colorOpts;
     })(itemData);
+
+    const seriesOpts = chartOpts.series ?? {};
+    const name = seriesOpts.name || 'Total';
+
     const series = chart.series.push(am5xy.LineSeries.new(root, {
-      name: "Series",
+      name,
       ...(colorOpts ? colorOpts : {}),
       xAxis: xAxis,
       yAxis: yAxis,
@@ -2079,8 +2083,11 @@ class AMCHandler {
     const valueFormat = isPercent ? ".formatNumber('0.00')" : '';
     const valueUnit = isPercent ? '%' : '';
     const labelText = `{category}: [bold]{valueY${valueFormat}}${valueUnit}[/]`;
+    const seriesOpts = chartOpts.series ?? {};
+    const name = seriesOpts.name || 'Total';
+
     const series = chart.series.push(am5radar.RadarLineSeries.new(root, {
-      name: "Series",
+      name,
       xAxis: xAxis,
       yAxis: yAxis,
       valueYField: `${chartOpts.valueField}`,
@@ -2243,7 +2250,7 @@ class AMCHandler {
     const cursorOpts = chartOpts.cursor ?? {};
     const tooltipOpts = cursorOpts.tooltip ?? {};
     const legendOpts = chartOpts.legend ?? {};
-    const seriesChartOpts = chartOpts.series ?? { name: 'Series' };
+    const seriesChartOpts = chartOpts.series ?? {};
     const labelValueOpts = legendOpts.labelValue ?? {};
 
     const seriesOpts = {
@@ -2255,11 +2262,10 @@ class AMCHandler {
         : { legendValueText: amc.getLegendValueTextFormat() }),
       legendRangeValueText: "[{stroke}]{valueYClose}[/]",
     };
-    seriesType = seriesType ?? 'line';
-    const xySeriesType = seriesType === 'line'
-      ? am5xy.LineSeries
-      : am5xy.ColumnSeries;
-    const seriesName = seriesChartOpts.name ?? 'Series';
+    seriesType = seriesType || 'line';
+    const isLineSeries = seriesType === 'line';
+    const xySeriesType = isLineSeries ? am5xy.LineSeries : am5xy.ColumnSeries;
+    const seriesName = seriesChartOpts.name || 'Total';
     const series = chart.series.push(xySeriesType.new(root, {
       ...seriesOpts,
       name: seriesName,
@@ -2271,7 +2277,10 @@ class AMCHandler {
     }));
     amc.setSeriesTemplate(series);
     amc.setSeriesDataProcessor(series);
-    amc.setBullets(series, seriesData);
+
+    if (isLineSeries) amc.setBullets(series, seriesData);
+    else series.data.setAll(seriesData);
+
     series.appear(AMCData.SERIES_FADE_IN);
     const legend = amc.setLegend();
     if (legend) {
@@ -2317,8 +2326,11 @@ class AMCHandler {
     const yAxis = chart.yAxes.push(am5xy.ValueAxis.new(root, {
       renderer: yRenderer,
     }));
+    const seriesOpts = chartOpts.series ?? {};
+    const name = seriesOpts.name || 'Total';
+
     const series = chart.series.push(am5xy.LineSeries.new(root, {
-      name: "Series",
+      name,
       xAxis: xAxis,
       yAxis: yAxis,
       valueYField: `${chartOpts.yAxis.valueYField}`,
@@ -4075,11 +4087,13 @@ class AMCData {
    * ]
    */
   seriesDataDailyDist(rawData) {
-    return rawData.map((item) => {
-      return {
+    return rawData.map(item => {
+      return AMCData.parseItemDataSettings({
         date: `${item.x}`,
         value: (item.item1 ?? 0) + 0,
-      }
+        color: item.color || "",
+        data_settings: item.data_settings || undefined,
+      });
     });
   }
 
@@ -5319,7 +5333,7 @@ class AMC {
         x: align === "center" ? am5.percent(50) : am5.percent(wPerc),
         centerX: am5.percent(align === "center" ? 50 : 0),
         // y: am5.percent(100),
-        y: am5.percent(96),
+        y: am5.percent(98.8),
         centerY: am5.percent(100),
       };
     }
