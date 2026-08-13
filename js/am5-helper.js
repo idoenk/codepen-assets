@@ -2227,6 +2227,7 @@ class AMCHandler {
   dailyDistBuzz(rawData, seriesType) {
     this.initialize();
     const seriesData = AMCData.get('seriesDataDailyDist', rawData);
+    console.log('in dailyDistBuzz, rawData=', JSON.stringify(rawData), 'seriesData', seriesData);
 
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, { chartOpts });
@@ -2250,10 +2251,10 @@ class AMCHandler {
     const cursorOpts = chartOpts.cursor ?? {};
     const tooltipOpts = cursorOpts.tooltip ?? {};
     const legendOpts = chartOpts.legend ?? {};
-    const seriesChartOpts = chartOpts.series ?? {};
+    const seriesOpts = chartOpts.series ?? {};
     const labelValueOpts = legendOpts.labelValue ?? {};
 
-    const seriesOpts = {
+    const seriesParams = {
       xAxis: xAxis,
       yAxis: yAxis,
       valueXField: `${xAxisOpts.categoryField}`,
@@ -2262,12 +2263,12 @@ class AMCHandler {
         : { legendValueText: amc.getLegendValueTextFormat() }),
       legendRangeValueText: "[{stroke}]{valueYClose}[/]",
     };
-    seriesType = seriesType || 'line';
+    seriesType = seriesType || seriesOpts.type || 'line';
     const isLineSeries = seriesType === 'line';
     const xySeriesType = isLineSeries ? am5xy.LineSeries : am5xy.ColumnSeries;
-    const seriesName = seriesChartOpts.name || 'Total';
+    const seriesName = seriesOpts.name || 'Total';
     const series = chart.series.push(xySeriesType.new(root, {
-      ...seriesOpts,
+      ...seriesParams,
       name: seriesName,
       valueYField: `${chartOpts.yAxis.valueYField}`,
       tooltip: am5.Tooltip.new(root, {
