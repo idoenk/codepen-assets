@@ -2227,7 +2227,6 @@ class AMCHandler {
   dailyDistBuzz(rawData, seriesType) {
     this.initialize();
     const seriesData = AMCData.get('seriesDataDailyDist', rawData);
-    console.log('in dailyDistBuzz, rawData=', JSON.stringify(rawData), 'seriesData', seriesData);
 
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, { chartOpts });
@@ -2272,8 +2271,8 @@ class AMCHandler {
       name: seriesName,
       valueYField: `${chartOpts.yAxis.valueYField}`,
       tooltip: am5.Tooltip.new(root, {
-        ...tooltipOpts,
         labelText: "[bold]{valueY}[/]",
+        ...tooltipOpts,
       }),
     }));
     amc.setSeriesTemplate(series);
