@@ -5680,7 +5680,7 @@ class AMC {
   /**
    * Set annotation on line or column series
    * This should be called before series.data.setAll()
-   * @param {am5.Series} series 
+   * @param {am5.Series} series
    * @return {am5.Series}
    */
   setSeriesAnnotationSetting(series) {
@@ -5693,24 +5693,50 @@ class AMC {
         const text = noteSettings?.text ?? '';
         if (!noteSettings || !text) return;
 
+        const spriteOpts = (() => {
+          /** @type {object|undefined} */
+          const backgroundOpts = noteSettings.background ?? undefined;
+
+          /** @type {am5.RoundedRectangle|undefined} */
+          const background = backgroundOpts
+            ? am5.RoundedRectangle.new(root, {...backgroundOpts})
+            : undefined;
+
+          const dy = parseInt(noteSettings.dy ?? 60);
+          const behaviors = [
+            'none',
+            'wrap',
+            'truncate',
+            'fit',
+            'wrap-no-spaces',
+          ];
+          let oversizedBehavior = noteSettings.oversizedBehavior ?? null;
+          oversizedBehavior = behaviors.includes(oversizedBehavior)
+            ? oversizedBehavior
+            : 'wrap';
+
+          let maxWidth = parseInt(noteSettings.maxWidth ?? null);
+          maxWidth = maxWidth && maxWidth > 0 ? maxWidth : 220;
+
+          const aligns = ['left', 'center', 'right'];
+          let textAlign = noteSettings.textAlign ?? '';
+          textAlign = aligns.includes(textAlign) ? textAlign : 'left';
+
+          let fontSize = parseInt(noteSettings.fontSize ?? undefined);
+          fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
+          
+          return {
+            ...noteSettings,
+            dy,
+            maxWidth,
+            oversizedBehavior,
+            textAlign,
+            fontSize,
+            background,
+          };
+        })();
+
         const isColumn = currentSeries instanceof am5xy.ColumnSeries;
-
-        /** @type {object|undefined} */
-        const backgroundOpts = noteSettings.background ?? undefined;
-
-        /** @type {am5.RoundedRectangle|undefined} */
-        const background = backgroundOpts
-          ? am5.RoundedRectangle.new(root, {...backgroundOpts})
-          : undefined;
-
-        const spriteOpts = {
-          ...noteSettings,
-          dy: 60,
-          maxWidth: 220,
-          oversizedBehavior: "wrap",
-          textAlign: "left",
-          background,
-        };
 
         const bullet = am5.Bullet.new(root, {
           locationY: isColumn ? 1 : undefined,
@@ -5718,9 +5744,6 @@ class AMC {
             text,
             centerX: am5.percent(50),
             centerY: am5.percent(100),
-            dy: -15,
-            textAlign: "center",
-            fontSize: 12,
             fill: am5.color(0x000000),
             ...spriteOpts,
           })
@@ -5736,7 +5759,8 @@ class AMC {
   /**
    * Set template field of column series
    * This should be called before series.data.setAll()
-   * @param {am5.ColumnSeries} series 
+   * Hence: method called from this.setSeriesTemplate()
+   * @param {am5.ColumnSeries} series
    * @param {string} templateField Default: "data_settings"
    * @return {am5.ColumnSeries}
    */
