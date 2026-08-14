@@ -2229,6 +2229,16 @@ class AMCHandler {
     const seriesData = AMCData.get('seriesDataDailyDist', rawData);
 
     const chartOpts = this.chartOpts;
+    const seriesOpts = chartOpts.series ?? {};
+
+    // change order of precedence of seriesType
+    const validSeriesTypes = ['line', 'column'];
+    const defaultSeriesType = 'line';
+    seriesType = seriesOpts.type || seriesType || defaultSeriesType;
+    seriesType = validSeriesTypes.includes(seriesType)
+      ? seriesType
+      : defaultSeriesType;
+
     const amc = this.getAmc(this.chartId, { chartOpts });
     const root = amc.createRoot();
     const chart = amc.createXYChart(root, {
@@ -2250,7 +2260,6 @@ class AMCHandler {
     const cursorOpts = chartOpts.cursor ?? {};
     const tooltipOpts = cursorOpts.tooltip ?? {};
     const legendOpts = chartOpts.legend ?? {};
-    const seriesOpts = chartOpts.series ?? {};
     const labelValueOpts = legendOpts.labelValue ?? {};
 
     const seriesParams = {
@@ -2262,7 +2271,7 @@ class AMCHandler {
         : { legendValueText: amc.getLegendValueTextFormat() }),
       legendRangeValueText: "[{stroke}]{valueYClose}[/]",
     };
-    seriesType = seriesType || seriesOpts.type || 'line';
+
     const isLineSeries = seriesType === 'line';
     const xySeriesType = isLineSeries ? am5xy.LineSeries : am5xy.ColumnSeries;
     const seriesName = seriesOpts.name || 'Total';
@@ -5448,62 +5457,82 @@ class AMC {
    * @param {?undefined|am5.Chart} chart
    */
   setBullets(series, data, chart) {
-    const bulletOpts = this.chartOpts.bullets ?? {
+    const chartOpts = this.chartOpts ?? {};
+    const bulletOpts = chartOpts.bullets ?? {
       enabled: true,
       hoverScale: 3, // {boolean|int}
     };
+    const cursorEnabled = chartOpts.cursor?.enabled ?? true;
     const bulletEnabled = bulletOpts.enabled ?? true;
     if (!bulletEnabled) {
       series.data.setAll(data);
       return !1;
     }
-    let hoverScale = bulletOpts.hoverScale ?? 3;
-    if (hoverScale && typeof hoverScale === "boolean")
-      hoverScale = 3;
+
+    let hoverScale = undefined;
+    if (cursorEnabled) {
+      hoverScale = bulletOpts.hoverScale ?? 3;
+      if (hoverScale && typeof hoverScale === "boolean")
+        hoverScale = 3;
+    }
+
     this.validate('series', series, am5.Series, 'setBullets');
     const root = this.getRoot();
-    const chartOpts = this.chartOpts ?? {};
+
+    /** @type {Function|null} */
     const onClick = typeof chartOpts.onclick === "function"
       ? chartOpts.onclick
       : null;
+
+    /** @type {am5.Template|undefined} */
     const bTemplate = onClick ? am5.Template.new(root) : undefined;
+
     if (bTemplate) bTemplate.events.on("click", e => { onClick(e) });
+
     const size = bulletOpts.size ?? 4;
     const shape = bulletOpts.shape ?? 'square';
     const customFields = ['enabled', 'size', 'shape', 'hoverScale'];
-    let bulletsParams = { ...bulletOpts };
+    const bulletsParams = { ...bulletOpts };
     Object.keys(bulletsParams).forEach((field) => {
-      if (customFields.indexOf(field) !== -1) delete bulletsParams[field];
+      if (!customFields.includes(field)) delete bulletsParams[field];
     });
+
     if (bulletsParams.strokeWidth > 0) {
       if (!bulletsParams.stroke) bulletsParams.stroke = series.get("stroke");
       if (!bulletsParams.fill) bulletsParams.fill = AMC.amColor(0xffffff);
     }
-    const baseShapeOpts = {
-      cursorOverStyle: `${onClick ? "pointer" : "default"}`,
+
+    const isSquareShape = shape === 'square';
+    const shapeOpts = {
+      cursorOverStyle: `${cursorEnabled && onClick ? "pointer" : "default"}`,
       centerX: am5.percent(50),
       centerY: am5.percent(50),
       populateText: true,
-      // stroke: series.get("stroke"),
-      // strokeWidth: 2,
       fill: series.get("fill"),
+      stroke: series.get("stroke"),
+      strokeWidth: 1,
       ...bulletsParams,
+      ...(isSquareShape
+        ? { width: size, height: size }
+        : { radius: size }),
     };
-    const shapeOpts = shape === 'square'
-      ? {
-        ...baseShapeOpts,
-        width: size,
-        height: size,
+
+    series.bullets.push(function (root, series, dataItem) {
+      const spriteOpts = { ...shapeOpts };
+
+      /** @type {object|undefined} */
+      const dataSettings = dataItem.dataContext?.data_settings ?? undefined;
+      if (dataSettings) {
+        ['fill', 'stroke', 'strokeWidth'].forEach(it => {
+          if (dataSettings[it]) spriteOpts[it] = dataSettings[it];
+        });
       }
-      : {
-        ...baseShapeOpts,
-        radius: size,
-      };
-    series.bullets.push(function () {
-      const sprite = shape === 'square'
-        ? am5.Rectangle.new(root, { ...shapeOpts }, bTemplate)
-        : am5.Circle.new(root, { ...shapeOpts }, bTemplate);
-      sprite.states.create('hover', { scale: hoverScale });
+
+      const sprite = isSquareShape
+        ? am5.Rectangle.new(root, spriteOpts, bTemplate)
+        : am5.Circle.new(root, spriteOpts, bTemplate);
+
+      if (cursorEnabled) sprite.states.create('hover', { scale: hoverScale });
       return am5.Bullet.new(root, {
         locationX: 0.5,
         locationY: 0.5,
