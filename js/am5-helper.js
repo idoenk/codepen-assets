@@ -257,17 +257,6 @@ class AMCHandler {
         yRenderer.set("visible", yAxisOpts.showGrid || yAxisOpts.showLabels);
       }
     })();
-
-    // Apply templateField to columns of chart.series (instance of am5xy.ColumnSeries)
-    (() => {
-      chart.series.each(series => {
-      if (series instanceof am5xy.ColumnSeries) {
-        series.columns?.template?.setAll({
-          templateField: "data_settings"
-        });
-      }
-    });
-    })()
   }
 
   /**
@@ -2286,6 +2275,7 @@ class AMCHandler {
     }));
     amc.setSeriesTemplate(series);
     amc.setSeriesDataProcessor(series);
+    amc.setSeriesAnnotationSetting(series);
 
     if (isLineSeries) amc.setBullets(series, seriesData);
     else series.data.setAll(seriesData);
@@ -2589,33 +2579,66 @@ class AMCData {
    * @returns {object}
    */
   static parseItemDataSettings(item) {
-    if (item.data_settings || item.color) {
-      item.data_settings = item.data_settings ?? {};
+    /**
+     * Parse object fields identified containing color values
+     * @param {object} obj
+     * @returns {object}
+     */
+    const parseObjectFields = (obj) => {
+      obj = obj ?? {};
+      if (typeof obj !== 'object') return {};
 
       ['fill', 'stroke'].forEach(it => {
-        const itemColor = item.data_settings[it] ?? item.color ?? null;
-        if (!itemColor) return !0;
+        const color = obj[it] ?? null;
 
-        const parsedColor = AMC.parseColorAndOpacity(itemColor);
-        if (!parsedColor) return !0;
+        /** @type {object|null} */
+        const parsed = color ? AMC.parseColorAndOpacity(color) : null;
 
-        item.data_settings[it] = parsedColor.color;
+        if (!parsed) delete obj[it];
+        else {
+          obj[it] = parsed.color;
 
-        const opacityKey = `${it}Opacity`;
+          const opacityKey = `${it}Opacity`;
 
-        /** @type {number|null} */
-        const opacityInput = (() => {
-          let value = item.data_settings[opacityKey] ?? null;
-          value = parseFloat(value);
-          if (isNaN(value)) return null;
+          /** @type {number|null} */
+          const opacityInput = (() => {
+            let value = obj[opacityKey] ?? null;
+            value = parseFloat(value);
+            if (isNaN(value)) return null;
 
-          return value < 0 ? 0 : (value > 1 ? 1 : value);
-        })();
+            return value < 0 ? 0 : (value > 1 ? 1 : value);
+          })();
 
-        item.data_settings[opacityKey] = opacityInput === null
-          ? parsedColor.opacity ?? 1
-          : opacityInput;
+          obj[opacityKey] = opacityInput === null
+            ? parsed.opacity ?? 1
+            : opacityInput;
+        }
       });
+
+      return obj;
+    };
+
+    if (item.data_settings || item.color) {
+      const dataSettings = item.data_settings ?? {};
+      if (item.color) {
+        ['fill', 'stroke'].forEach(it => {
+          if (!dataSettings[it]) dataSettings[it] = item.color;
+        });
+      }
+      item.data_settings = parseObjectFields(dataSettings);
+
+      // always delete legacy key
+      delete item.color;
+    }
+
+    if (item.annotation_settings) {
+      const noteSettings = parseObjectFields(item.annotation_settings);
+
+      if (noteSettings.background) {
+        noteSettings.background = parseObjectFields(noteSettings.background);
+      }
+
+      item.annotation_settings = noteSettings;
     }
 
     return item;
@@ -4100,8 +4123,13 @@ class AMCData {
       return AMCData.parseItemDataSettings({
         date: `${item.x}`,
         value: (item.item1 ?? 0) + 0,
-        color: item.color || "",
-        data_settings: item.data_settings || undefined,
+        ...(item.color || "" ? {color: item.color} : {}),
+        ...(item.data_settings ?? null
+          ? {data_settings: item.data_settings}
+          : {}),
+        ...(item.annotation_settings ?? null
+          ? {annotation_settings: item.annotation_settings}
+          : {}),
       });
     });
   }
@@ -5643,7 +5671,83 @@ class AMC {
         }
       }
     });
+
+    this.setSeriesColumnTemplateField(series);
+
     return !0;
+  }
+
+  /**
+   * Set annotation on line or column series
+   * This should be called before series.data.setAll()
+   * @param {am5.Series} series 
+   * @return {am5.Series}
+   */
+  setSeriesAnnotationSetting(series) {
+    if (series.isType("ColumnSeries") || series.isType("LineSeries")) {
+      series.bullets.push(function (root, currentSeries, dataItem) {
+        /** @type {object|undefined} */
+        const noteSettings = dataItem.dataContext?.annotation_settings ?? undefined;
+
+        /** @type {string} */
+        const text = noteSettings?.text ?? '';
+        if (!noteSettings || !text) return;
+
+        const isColumn = currentSeries instanceof am5xy.ColumnSeries;
+
+        /** @type {object|undefined} */
+        const backgroundOpts = noteSettings.background ?? undefined;
+
+        /** @type {am5.RoundedRectangle|undefined} */
+        const background = backgroundOpts
+          ? am5.RoundedRectangle.new(root, {...backgroundOpts})
+          : undefined;
+
+        const spriteOpts = {
+          ...noteSettings,
+          dy: 60,
+          maxWidth: 220,
+          oversizedBehavior: "wrap",
+          textAlign: "left",
+          background,
+        };
+
+        const bullet = am5.Bullet.new(root, {
+          locationY: isColumn ? 1 : undefined,
+          sprite: am5.Label.new(root, {
+            text,
+            centerX: am5.percent(50),
+            centerY: am5.percent(100),
+            dy: -15,
+            textAlign: "center",
+            fontSize: 12,
+            fill: am5.color(0x000000),
+            ...spriteOpts,
+          })
+        });
+
+        return bullet;
+      });
+    }
+
+    return series;
+  }
+
+  /**
+   * Set template field of column series
+   * This should be called before series.data.setAll()
+   * @param {am5.ColumnSeries} series 
+   * @param {string} templateField Default: "data_settings"
+   * @return {am5.ColumnSeries}
+   */
+  setSeriesColumnTemplateField(series, templateField) {
+    if (series.isType("ColumnSeries")) {
+      templateField = templateField || 'data_settings';
+
+      series.columns.template.setAll({ templateField });
+    }
+
+    return series;
   }
 
   /**
