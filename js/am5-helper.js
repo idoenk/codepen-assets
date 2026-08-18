@@ -2582,7 +2582,6 @@ class AMCData {
 
         /** @type {object|null} */
         const parsed = color ? AMC.parseColorAndOpacity(color) : null;
-        console.log('parsed', parsed, color);
 
         if (!parsed) delete obj[it];
         else {
@@ -2611,7 +2610,6 @@ class AMCData {
     if (item.data_settings || item.color) {
       const dataSettings = item.data_settings ?? {};
       if (item.color) {
-        console.log('Found color: '+ item.color);
         ['fill', 'stroke'].forEach(it => {
           if (!dataSettings[it]) dataSettings[it] = `${item.color}`;
         });
@@ -4416,11 +4414,9 @@ class AMCData {
         color: dto.color ?? it.color ?? '',
         data_settings: dto.data_settings ?? it.data_settings ?? undefined,
       };
-      console.log('item', item,);
 
       return AMCData.parseItemDataSettings(item);
     });
-    console.log('data', data);
 
     /** @type {string[]} */
     const cachedCategories = [];
@@ -5268,9 +5264,12 @@ class AMC {
       ...tooltipFormatOpts,
       ...opts,
     };
+
     if (xAxisOpts.tooltip.enabled)
       axisParams.tooltip = am5.Tooltip.new(root, {});
+
     const xAxis = chart.xAxes.push(am5xy.CategoryAxis.new(root, axisParams));
+
     return xAxis;
   }
 
@@ -5285,6 +5284,7 @@ class AMC {
     this.validate('chart', chart, am5.Chart, 'setYAxis');
     opts = opts || {};
     const root = this.getRoot();
+    const chartOpts = this.chartOpts ?? {};
     const yRenderer = opts.renderer
       ? opts.renderer
       : am5xy.AxisRendererY.new(root, {});
@@ -5293,7 +5293,9 @@ class AMC {
       maxDeviation: 0.2,
       renderer: yRenderer,
       ...opts,
+      ...((chartOpts.yAxis ?? {}).valueAxis ?? {}),
     }));
+
     return yAxis;
   }
 
@@ -5744,74 +5746,215 @@ class AMC {
    * @return {am5.Series}
    */
   setSeriesAnnotationSetting(series) {
-    if (series.isType("ColumnSeries") || series.isType("LineSeries")) {
-      series.bullets.push(function (root, currentSeries, dataItem) {
-        /** @type {object|undefined} */
-        const noteSettings = dataItem.dataContext?.annotation_settings ?? undefined;
+    const isSupportAnnotation = (
+      series.isType("ColumnSeries") ||
+      series.isType("LineSeries")
+    );
 
-        /** @type {string} */
-        const text = noteSettings?.text ?? '';
-        if (!noteSettings || !text) return;
+    if (!isSupportAnnotation) return series;
 
-        const spriteOpts = (() => {
-          /** @type {object|undefined} */
-          const backgroundOpts = noteSettings.background ?? undefined;
+    series.bullets.push(function (root, currentSeries, dataItem) {
+      /** @type {object|undefined} */
+      const noteSettings = dataItem.dataContext?.annotation_settings ?? undefined;
 
-          /** @type {am5.RoundedRectangle|undefined} */
-          const background = backgroundOpts
-            ? am5.RoundedRectangle.new(root, {...backgroundOpts})
-            : undefined;
+      /** @type {string} */
+      const text = noteSettings?.text ?? '';
+      if (!noteSettings || !text) return;
 
-          const dy = parseInt(noteSettings.dy ?? 60);
-          const behaviors = [
-            'none',
-            'wrap',
-            'truncate',
-            'fit',
-            'wrap-no-spaces',
-          ];
-          let oversizedBehavior = noteSettings.oversizedBehavior ?? null;
-          oversizedBehavior = behaviors.includes(oversizedBehavior)
-            ? oversizedBehavior
-            : 'wrap';
+      /** @type {object|undefined} */
+      const backgroundOpts = noteSettings.background ?? undefined;
 
-          let maxWidth = parseInt(noteSettings.maxWidth ?? null);
-          maxWidth = maxWidth && maxWidth > 0 ? maxWidth : 220;
+      /** @type {am5.RoundedRectangle|undefined} */
+      const background = (backgroundOpts && typeof backgroundOpts === 'object')
+        ? am5.RoundedRectangle.new(root, {...backgroundOpts})
+        : undefined;
 
-          const aligns = ['left', 'center', 'right'];
-          let textAlign = noteSettings.textAlign ?? '';
-          textAlign = aligns.includes(textAlign) ? textAlign : 'left';
+      /** @type {number} */
+      const dy = parseInt(noteSettings.dy ?? 10);
 
-          let fontSize = parseInt(noteSettings.fontSize ?? undefined);
-          fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
-          
-          return {
-            ...noteSettings,
-            dy,
-            maxWidth,
-            oversizedBehavior,
-            textAlign,
-            fontSize,
-            background,
-          };
-        })();
-
-        const isColumn = currentSeries instanceof am5xy.ColumnSeries;
-
-        const bullet = am5.Bullet.new(root, {
-          locationY: isColumn ? 1 : undefined,
-          sprite: am5.Label.new(root, {
-            text,
-            centerX: am5.percent(50),
-            centerY: am5.percent(100),
-            fill: am5.color(0x000000),
-            ...spriteOpts,
-          })
-        });
-
-        return bullet;
+      // Create a Container to handle layout, background, and adaptive positioning
+      const container = am5.Container.new(root, {
+        centerX: am5.percent(50),
+        centerY: am5.percent(100),
+        background,
+        dy,
       });
-    }
+
+      /** @type {object} */
+      const spriteOpts = (() => {
+        const behaviors = [
+          'none',
+          'wrap',
+          'truncate',
+          'fit',
+          'wrap-no-spaces',
+        ];
+        let oversizedBehavior = noteSettings.oversizedBehavior ?? null;
+        oversizedBehavior = behaviors.includes(oversizedBehavior)
+          ? oversizedBehavior
+          : 'wrap';
+
+        const aligns = ['left', 'center', 'right'];
+        let textAlign = noteSettings.textAlign ?? '';
+        textAlign = aligns.includes(textAlign) ? textAlign : 'left';
+
+        let fontSize = parseInt(noteSettings.fontSize ?? undefined);
+        fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
+
+        const remainingOpts = { ...noteSettings };
+        ['dy', 'background', 'oversizedBehavior', 'textAlign', 'fontSize']
+          .forEach(it => delete remainingOpts[it]);
+
+        return {
+          ...remainingOpts,
+          oversizedBehavior,
+          textAlign,
+          fontSize,
+          // lineHeight: undefined,
+          // paddingTop: undefined,
+          // paddingRight: undefined,
+          // paddingBottom: undefined,
+          // paddingLeft: undefined,
+        };
+      })();
+
+      // Create the Label strictly for text measurement
+      const label = am5.Label.new(root, {
+        text: text,
+        fill: am5.color(0x000000),
+        // spriteOpts: maxWidth, oversizedBehavior, textAlign, fontSize, etc.
+        ...spriteOpts
+      });
+
+      container.children.push(label);
+
+      // Move all your Adapters (centerX, dy, centerY) to target the CONTAINER
+      container.adapters.add("centerX", function(defaultCenterX, target) {
+        const point = dataItem.get("point");
+        if (!point || !currentSeries.chart) return defaultCenterX;
+
+        const plotWidth = currentSeries.chart.plotContainer.width();
+        if (point.x > plotWidth * 0.85) {
+          label.set("textAlign", "right"); // Modify label alignment inside container adapter
+          return am5.percent(100);
+        }
+        if (point.x < plotWidth * 0.15) {
+          label.set("textAlign", "left");
+          return am5.percent(0);
+        }
+
+        label.set("textAlign", spriteOpts.textAlign);
+        return defaultCenterX;
+      });
+
+      container.adapters.add("dy", function(defaultDy, target) {
+        const point = dataItem.get("point");
+        if (!point || !currentSeries.chart) return defaultDy;
+        const plotHeight = currentSeries.chart.plotContainer.height();
+
+        if (point.y > plotHeight * 0.75) return -Math.abs(defaultDy);
+        return defaultDy;
+      });
+
+      container.adapters.add("centerY", function(defaultCenterY, target) {
+        const point = dataItem.get("point");
+        if (!point || !currentSeries.chart) return defaultCenterY;
+        const plotHeight = currentSeries.chart.plotContainer.height();
+
+        if (point.y > plotHeight * 0.75) return am5.percent(100);
+        return am5.percent(0);
+      });
+
+      const isColumn = currentSeries instanceof am5xy.ColumnSeries;
+
+      // Register the container as the bullet's sprite
+      const bullet = am5.Bullet.new(root, {
+        locationY: isColumn ? 1 : undefined,
+        sprite: container
+      });
+
+      return bullet;
+    });
+  }
+
+  /** @deprecated */
+  setSeriesAnnotationSetting_V0(series) {
+    const isSupportAnnotation = (
+      series.isType("ColumnSeries") ||
+      series.isType("LineSeries")
+    );
+
+    if (!isSupportAnnotation) return series;
+
+    series.bullets.push(function (root, currentSeries, dataItem) {
+    /** @type {object|undefined} */
+      const noteSettings = dataItem.dataContext?.annotation_settings ?? undefined;
+
+      /** @type {string} */
+      const text = noteSettings?.text ?? '';
+      if (!noteSettings || !text) return;
+
+      const spriteOpts = (() => {
+        /** @type {object|undefined} */
+        const backgroundOpts = noteSettings.background ?? undefined;
+
+        /** @type {am5.RoundedRectangle|undefined} */
+        const background = backgroundOpts
+          ? am5.RoundedRectangle.new(root, {...backgroundOpts})
+          : undefined;
+
+        const dy = parseInt(noteSettings.dy ?? 60);
+        const behaviors = [
+          'none',
+          'wrap',
+          'truncate',
+          'fit',
+          'wrap-no-spaces',
+        ];
+        let oversizedBehavior = noteSettings.oversizedBehavior ?? null;
+        oversizedBehavior = behaviors.includes(oversizedBehavior)
+          ? oversizedBehavior
+          : 'wrap';
+
+        let maxWidth = parseInt(noteSettings.maxWidth ?? null);
+        // maxWidth = isNaN(maxWidth)
+        //   ? undefined
+        //   : (maxWidth > 0 ? maxWidth : undefined);
+        maxWidth = maxWidth && maxWidth > 0 ? maxWidth : 220;
+
+        const aligns = ['left', 'center', 'right'];
+        let textAlign = noteSettings.textAlign ?? '';
+        textAlign = aligns.includes(textAlign) ? textAlign : 'left';
+
+        let fontSize = parseInt(noteSettings.fontSize ?? undefined);
+        fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
+        
+        return {
+          ...noteSettings,
+          dy,
+          maxWidth,
+          oversizedBehavior,
+          textAlign,
+          fontSize,
+          background,
+        };
+      })();
+
+      const isColumn = currentSeries instanceof am5xy.ColumnSeries;
+
+      const bullet = am5.Bullet.new(root, {
+        locationY: isColumn ? 1 : undefined,
+        sprite: am5.Label.new(root, {
+          text,
+          centerX: am5.percent(50),
+          centerY: am5.percent(100),
+          fill: am5.color(0x000000),
+          ...spriteOpts,
+        })
+      });
+
+      return bullet;
+    });
 
     return series;
   }
