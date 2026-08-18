@@ -1173,32 +1173,16 @@ class AMCHandler {
         sequencedInterpolation: true,
       }));
 
+      amc.setSeriesTemplate(series);
+
       series.columns.template.setAll({
         height: am5.p100,
         strokeOpacity: 1,
       });
 
-      /**
-       * @deprecated in future
-       * fill and stroke color should be handled by supplied data_settings on data item
-       */
-      ["fill", "stroke"].forEach(it => {
-        series.columns.template.adapters.add(it, function (color, target) {
-          const dataContext = target.dataItem?.dataContext;
-          const hasDataSettings = dataContext && "undefined" !== typeof dataContext?.data_settings;
-          const colorValue = hasDataSettings
-            ? dataContext?.data_settings[it]
-            : dataContext?.color;
-          return colorValue ? am5.color(colorValue) : color;
-        });
-      })
-
       const valueLabelsOpts = chartOpts.valueLabels ?? {};
 
-      /** @type {boolean} */
-      const showValueLabels = valueLabelsOpts.enabled ?? true;
-
-      if (showValueLabels) {
+      if (valueLabelsOpts.enabled ?? true) {
         series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
       }
 
@@ -1619,12 +1603,11 @@ class AMCHandler {
       })
     }));
 
+    amc.setSeriesTemplate(series);
+
     const valueLabelsOpts = chartOpts.valueLabels ?? {};
 
-    /** @type {boolean} */
-    const showValueLabels = valueLabelsOpts.enabled ?? true;
-
-    if (showValueLabels) {
+    if (valueLabelsOpts.enabled ?? true) {
       series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts, 'vertical'));
     }
 
@@ -1962,7 +1945,7 @@ class AMCHandler {
         ...(!labelValueOpts.visible ? { legendValueText: "" } : {}),
       }));
 
-    let customText = labelsOpts.customText ?? '';
+    let customText = labelsOpts.text ?? '';
     if (customText) {
       // E.g. {percentage:0.0}
       const textRegex = /{(percentage)(?:\:([^\}]+))?}/;
@@ -2199,13 +2182,19 @@ class AMCHandler {
     const root = amc.createRoot();
 
     const container = amc.getOrCreateZoomableContainer(root);
-    const series = container.children.push(amc.createWordCloud(root));
 
-    amc.setWordCloudLabel(series);
+    const createSeriesWordCloud = () => {
+      const series = container.children.push(amc.createWordCloud(root));
+      amc.setWordCloudLabel(series);
+      series.data.setAll(seriesData);
 
-    series.data.setAll(seriesData);
+      this.triggerAppearanceOf(series);
+    };
 
-    this.triggerAppearanceOf(series);
+    const labelOpts = wcOpts.labels ?? {};
+    const fontFamily = labelOpts.fontFamily ?? '';
+    if (fontFamily) amc.mountWordCloudSafely(fontFamily, createSeriesWordCloud);
+    else createSeriesWordCloud();
   }
 
   /**
@@ -2593,6 +2582,7 @@ class AMCData {
 
         /** @type {object|null} */
         const parsed = color ? AMC.parseColorAndOpacity(color) : null;
+        console.log('parsed', parsed, color);
 
         if (!parsed) delete obj[it];
         else {
@@ -2621,8 +2611,9 @@ class AMCData {
     if (item.data_settings || item.color) {
       const dataSettings = item.data_settings ?? {};
       if (item.color) {
+        console.log('Found color: '+ item.color);
         ['fill', 'stroke'].forEach(it => {
-          if (!dataSettings[it]) dataSettings[it] = item.color;
+          if (!dataSettings[it]) dataSettings[it] = `${item.color}`;
         });
       }
       item.data_settings = parseObjectFields(dataSettings);
@@ -2642,6 +2633,73 @@ class AMCData {
     }
 
     return item;
+  }
+
+  /**
+   * Resolve padding configuration of given options object.
+   * Eg. chartOpts.wordcloud.labels?.padding (number|string)
+   * Example: obj.padding: "0 10" will be extracted to:
+   * obj.paddingTop: 0
+   * obj.paddingRight: 10
+   * obj.paddingBottom: 0
+   * obj.paddingLeft: 10
+   * @param {object} obj
+   * @returns {object}
+   */
+  static resolvePaddingConfig(obj) {
+    if (!obj || typeof obj !== 'object') {
+      return {
+        paddingTop: 0,
+        paddingRight: 0,
+        paddingBottom: 0,
+        paddingLeft: 0
+      };
+    }
+
+    let top = 5;
+    let right = 5;
+    let bottom = 5;
+    let left = 5;
+
+    // Process the shorthand 'padding' first if it exists
+    if (obj.padding !== undefined && obj.padding !== null) {
+      // Force to string to handle mixed type inputs safely, then split by spaces
+      const paddingParts = String(obj.padding).trim().split(/\s+/).map(Number);
+      const partCount = paddingParts.length;
+
+      // Fallbacks for invalid numbers
+      const val1 = isNaN(paddingParts[0]) ? 0 : paddingParts[0];
+      const val2 = isNaN(paddingParts[1]) ? val1 : paddingParts[1];
+      const val3 = isNaN(paddingParts[2]) ? val1 : paddingParts[2];
+      const val4 = isNaN(paddingParts[3]) ? val2 : paddingParts[3];
+
+      if (partCount === 1) {
+        top = right = bottom = left = val1;
+      } else if (partCount === 2) {
+        top = bottom = val1;
+        right = left = val2;
+      } else if (partCount === 3) {
+        top = val1;
+        right = left = val2;
+        bottom = val3;
+      } else if (partCount >= 4) {
+        top = val1;
+        right = val2;
+        bottom = val3;
+        left = val4;
+      }
+    }
+
+    delete obj.padding;
+
+    // Overrides: specific sides take precedence over the shorthand
+    return {
+      ...obj,
+      paddingTop: obj.paddingTop !== undefined ? Number(obj.paddingTop) : top,
+      paddingRight: obj.paddingRight !== undefined ? Number(obj.paddingRight) : right,
+      paddingBottom: obj.paddingBottom !== undefined ? Number(obj.paddingBottom) : bottom,
+      paddingLeft: obj.paddingLeft !== undefined ? Number(obj.paddingLeft) : left,
+    };
   }
 
   /**
@@ -2965,10 +3023,10 @@ class AMCData {
 
       case "wordcloud":
         let labelOpts = {
-          paddingTop: 5,
-          paddingBottom: 5,
-          paddingLeft: 5,
-          paddingRight: 5,
+          paddingTop: undefined,
+          paddingBottom: undefined,
+          paddingLeft: undefined,
+          paddingRight: undefined,
           fontFamily: "Times New Roman",
           _colors: {
             tone: "default", // default, mono, heat, custom.
@@ -4354,13 +4412,15 @@ class AMCData {
       const item = {
         category: dto.slug ?? it.label ?? it.name ?? it.key ?? 'n/a',
         value: dto.total ?? it.value ?? it.doc_count ?? 0,
-        avatar: it.avatar ?? '',
+        avatar: dto.avatar ?? it.avatar ?? '',
         color: dto.color ?? it.color ?? '',
         data_settings: dto.data_settings ?? it.data_settings ?? undefined,
       };
+      console.log('item', item,);
 
       return AMCData.parseItemDataSettings(item);
     });
+    console.log('data', data);
 
     /** @type {string[]} */
     const cachedCategories = [];
@@ -5861,6 +5921,32 @@ class AMC {
   }
 
   /**
+   * Wait fiven font-family is loaded to start initialize wordcloud instance
+   * @param {string} fontFamily
+   * @param {Function} initializeWordCloudInstance
+   */
+  async mountWordCloudSafely(fontFamily, initializeWordCloudInstance) {
+    const fontQuery = `normal 12px "${fontFamily}"`;
+
+    try {
+      // Halt execution until the specific font is verified as loaded by the browser environment
+      const loadedFonts = await document.fonts.load(fontQuery);
+
+      if (loadedFonts.length === 0) {
+        console.warn(`[WordCloud] Font "${fontFamily}" was not found or failed to load. Proceeding with system fallback.`);
+      }
+
+      // It is now 100% safe to calculate canvas text bounds
+      if (typeof initializeWordCloudInstance === 'function')
+        initializeWordCloudInstance();
+    } catch (fontLoadingError) {
+      console.error("[WordCloud] Error during font validation. Rendering with fallbacks.", fontLoadingError);
+      if (typeof initializeWordCloudInstance === 'function')
+        initializeWordCloudInstance();
+    }
+  }
+
+  /**
    * Create wordcloud
    * @param {am5.Root} root
    * @return {am5.WordCloud}
@@ -5984,7 +6070,7 @@ class AMC {
       valueField: "value",
       onclick: undefined,
     };
-    const tooltipText = `{${wcOpts.categoryField}}: [bold]{${wcOpts.valueField}}[/]`;
+
     const defaultLabelOpts = {
       _colors: { tone: "default" },
       _hoverEffect: { ...defaultHoverEffect },
@@ -5994,7 +6080,9 @@ class AMC {
       },
     };
     wcOpts.labels = wcOpts.labels ?? { ...defaultLabelOpts };
-    const labelOpts = wcOpts.labels ?? { ...defaultLabelOpts };
+    const labelOpts = AMCData.resolvePaddingConfig(
+      wcOpts.labels ?? { ...defaultLabelOpts }
+    );
     const colorOpts = labelOpts._colors ?? { ...defaultLabelOpts._colors };
     const tooltipOpts = labelOpts._tooltip ?? { ...defaultLabelOpts._tooltip };
     // ############
@@ -6058,7 +6146,8 @@ class AMC {
     const hovOpts = labelOpts._hoverEffect ?? { ...defaultHoverEffect };
     if (!!hovOpts.enabled) {
       opts = {
-        ...opts, ...{
+        ...opts,
+        ...{
           setStateOnChildren: true,
           interactive: true,
         }
@@ -6071,7 +6160,6 @@ class AMC {
           fill: AMC.amColor(hovOpts.idleBoxColor, defColors.idleBoxColor),
         });
         const bg = target.set("background", roundedBox);
-        const hoverBoxColor = AMC.amColor(hovOpts.hoverBoxColor, defColors.hoverBoxColor);
         bg.states.create("hover", {
           fill: AMC.amColor(hovOpts.hoverBoxColor, defColors.hoverBoxColor),
         });
