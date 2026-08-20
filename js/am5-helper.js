@@ -1083,24 +1083,160 @@ class AMCHandler {
   }
 
   /**
-   * Render clustered column by specified metricField
-  * @param {array} rawData
-  * @param {string} metricField Default: doc_count
+   * Render horizontal column
+   * @param {array} rawData
+   * @param {string} metricField value field Eg. likes_count, doc_count. Default: doc_count
    */
-  horizontalColumn(rawData, metricField='doc_count') {
+  horizontalColumn(rawData, metricField) {
+    this.initialize();
+
+    const chartOpts = this.chartOpts;
+    const yAxisOpts = chartOpts.yAxis ?? {};
+    metricField = metricField || yAxisOpts.metricField || 'doc_count';
+
+    const seriesData = AMCData.get(
+      'seriesDataHorizontalColumn', rawData, metricField);
+
+    const amc = this.getAmc(this.chartId, {chartOpts});
+    const root = amc.createRoot();
+    const chart = amc.createXYChart(root);
+
+    const yAxisBullet = function (root, axis, dataItem) {
+      const sprite = am5.Picture.new(root, {
+        width: 32,
+        height: 32,
+        centerX: am5.percent(50),
+        centerY: am5.percent(50),
+        src: dataItem.dataContext.avatar,
+      });
+
+      const label = dataItem.get("label");
+
+      // Moves icon to the left of the label
+      label.events.on("boundschanged", function (e) {
+        sprite.set("centerX", 32 + ((40-32)/2));
+      });
+
+      return am5xy.AxisBullet.new(root, {
+        location: 0.5,
+        sprite: sprite
+      });
+    };
+
+    const yAxis = amc.setXCategoryAxis(chart, {
+      categoryField: "category",
+      renderer: am5xy.AxisRendererY.new(root, {
+        inversed: true,
+        cellStartLocation: 0.1,
+        cellEndLocation: 0.9,
+        minorGridEnabled: true,
+      }),
+      bullet: yAxisBullet,
+    });
+    yAxis.get("renderer").labels.template.setAll({
+      textAlign: "right",
+      paddingRight: 40,
+      maxWidth: 320,
+      oversizedBehavior: "wrap",
+    });
+    yAxis.data.setAll(seriesData);
+
+    const xAxis = amc.setYAxis(chart, {
+      renderer: am5xy.AxisRendererX.new(root, {
+        strokeOpacity: 0.1,
+      }),
+      extraMax: 0.05,
+      min: 0
+    });
+
+    /**
+     * Create column series
+     * @param {string} field
+     * @param {string} name
+     * @param {?object} colorOpts
+     * @returns {series}
+     */
+    function createSeries(field, name, colorOpts) {
+      const series = chart.series.push(am5xy.ColumnSeries.new(root, {
+        name: name,
+        ...(colorOpts ? colorOpts : {}),
+        xAxis: xAxis,
+        yAxis: yAxis,
+        valueXField: field,
+        categoryYField: "category",
+        sequencedInterpolation: true,
+      }));
+
+      amc.setSeriesTemplate(series);
+
+      series.columns.template.setAll({
+        height: am5.p100,
+        strokeOpacity: 1,
+      });
+
+      const valueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      if (valueLabelsOpts.enabled ?? true) {
+        series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
+      }
+
+      return series;
+    }
+    let seriesName = chartOpts.series?.name ?? '';
+    seriesName = seriesName
+      ? seriesName
+      : AMC.ucfirst(`${metricField}`.replace('_', ' ').toLowerCase());
+
+    const colorOpts = AMC.getSeriesColorFromOptions(chartOpts);
+    const series = createSeries("value", seriesName, colorOpts);
+    series.data.setAll(seriesData);
+    series.appear(AMCData.SERIES_FADE_IN);
+
+    const legend = amc.setLegend();
+    if (legend) {
+      legend.data.setAll(chart.series.values);      
+      legend.appear(AMCData.SERIES_FADE_IN);
+    }
+
+    const customLegend = amc.setCustomLegend(rawData, seriesData);
+    if (customLegend) {
+      customLegend.appear(AMCData.SERIES_FADE_IN);
+    }
+
+    return this.triggerChartAppearance();
+  }
+
+  /**
+   * Render horizontal column chart of top post sorted by specified metricField
+   * @param {array} rawData
+   * @param {string} metricField
+   */
+  horizontalColumnTopMetric(rawData, metricField) {
+    return this.horizontalColumn(rawData, metricField);
+  }
+
+  /**
+   * @deprecated
+   * Render clustered column by specified metricField
+   * @param {array} rawData
+   * @param {string} metricField Default: doc_count
+   */
+  horizontalColumn_BAK(rawData, metricField='doc_count') {
     metricField = metricField ? metricField : 'doc_count';
     return this.horizontalColumnTopMetric(rawData, metricField);
   }
 
   /**
+   * @deprecated
    * Render clustered column of top post sorted by specified metricField
    * @param {array} rawData
    * @param {string} metricField
    */
-  horizontalColumnTopMetric(rawData, metricField) {
+  horizontalColumnTopMetric_BAK(rawData, metricField) {
     this.initialize();
     const seriesData = AMCData.get(
-      'seriesDataHorizontalColumnTopMetric', rawData, metricField);
+      'seriesDataHorizontalColumn', rawData, metricField);
+    console.log('in horizontal column top metric', 'seriesData', seriesData, 'rawData', rawData, 'metricField', metricField)
 
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, {chartOpts});
@@ -2621,10 +2757,43 @@ class AMCData {
     }
 
     if (item.annotation_settings) {
+      /** @type {string|null} Fallback value when no specified fill */
+      const itemColor = item.annotation_settings.color ?? null;
+      if (!item.annotation_settings.fill && itemColor) {
+        item.annotation_settings.fill = itemColor;
+      }
+      /** @type {object|null} */
       const noteSettings = parseObjectFields(item.annotation_settings);
 
+      // expand padding key
+      if ((noteSettings.padding ?? undefined) !== undefined) {
+        /** @type {object|null} */
+        const paddings = AMCData.resolvePaddingConfig(noteSettings, {
+          top: null,
+          right: null,
+          bottom: null,
+          left: null,
+        });
+        if (paddings) Object.assign(noteSettings, paddings);
+      }
+
       if (noteSettings.background) {
-        noteSettings.background = parseObjectFields(noteSettings.background);
+        let bgSettings = parseObjectFields(noteSettings.background);
+
+        // expand cornerRadius key
+        let radius = bgSettings.cornerRadius ?? undefined;
+        radius = radius !== undefined ? Number(radius) : undefined;
+        radius = radius >= 0 ? radius : undefined;
+        if (radius !== undefined) {
+          ['TL', 'TR', 'BL', 'BR'].forEach(it => {
+            const val = bgSettings[`cornerRadius${it}`] ?? undefined;
+            bgSettings[`cornerRadius${it}`] = val ?? radius;
+          });
+          delete bgSettings.cornerRadius;
+        }
+
+        // at the last
+        noteSettings.background = bgSettings;
       }
 
       item.annotation_settings = noteSettings;
@@ -2642,9 +2811,10 @@ class AMCData {
    * obj.paddingBottom: 0
    * obj.paddingLeft: 10
    * @param {object} obj
+   * @param {object} paddingDefaults Default: {top: 5, right: 5, bottom: 5, left: 5}
    * @returns {object}
    */
-  static resolvePaddingConfig(obj) {
+  static resolvePaddingConfig(obj, paddingDefaults) {
     if (!obj || typeof obj !== 'object') {
       return {
         paddingTop: 0,
@@ -2654,10 +2824,17 @@ class AMCData {
       };
     }
 
-    let top = 5;
-    let right = 5;
-    let bottom = 5;
-    let left = 5;
+    paddingDefaults = paddingDefaults ?? {
+      top: 5,
+      right: 5,
+      bottom: 5,
+      left: 5,
+    };
+
+    let top = paddingDefaults.top;
+    let right = paddingDefaults.right;
+    let bottom = paddingDefaults.bottom;
+    let left = paddingDefaults.left;
 
     // Process the shorthand 'padding' first if it exists
     if (obj.padding !== undefined && obj.padding !== null) {
@@ -2939,6 +3116,7 @@ class AMCData {
         const yAxis = {
           yAxis: {
             valueYField: "value",
+            metricField: "doc_count",
             showGrid: true,
             showLabels: true,
           },
@@ -4267,7 +4445,7 @@ class AMCData {
 
   /**
    * Transform given data for horizontal column of specfied metric field
-   * Eg. likes_count
+   * Eg. doc_count, likes_count
    * @param {object} rawData of:
    * [
    *   {
@@ -4288,59 +4466,57 @@ class AMCData {
    *   },
    * ]
    */
-  seriesDataHorizontalColumnTopMetric(rawData, metricField) {
-    metricField = metricField ?? 'likes_count';
-
+  seriesDataHorizontalColumn(rawData, metricField) {
     /** @type {string[]} */
     const cachedCategories = [];
 
     return rawData.map(it => {
-      let item = {};
+      const item = {};
       const meta = it.metadata ?? it;
-      const dto = "object" === typeof it.dto ? it.dto : undefined;
+      const dto = "object" === typeof it.dto && it.dto ? it.dto : undefined;
       if (dto) {
         const user = dto.user ?? {};
-        item = {
-          ...item,
+        const avatar = user.avatar_cache ?? user.avatar ?? meta.from_avatar ?? "";
+        Object.assign(item, {
           category: dto.text ?? dto.key ?? "",
           value: (dto.metric ?? {})[metricField] ?? meta[metricField] ?? 0,
-          avatar: user.avatar_cache ?? user.avatar ?? meta.from_avatar ?? "",
-        };
+          ...(avatar ? {avatar} : {}),
+        });
       }
       else {
-        item = {
-          ...item,
+        const avatar = meta.from_avatar ?? "";
+        Object.assign(item, {
           category: meta.message ?? meta.key ?? "",
           value: meta[metricField] ?? 0,
-          avatar: meta.from_avatar ?? "",
-        };
+          ...(avatar ? {avatar} : {}),
+        });
       }
 
-      item = {
-        ...item,
+      Object.assign(item, {
         color: dto?.color ?? meta?.color ?? "",
         data_settings: dto?.data_settings ?? meta?.data_settings ?? undefined,
-      };
-      item = AMCData.parseItemDataSettings(item);
+      });
+      Object.assign(item, AMCData.parseItemDataSettings(item));
 
-      const maxLen = 100;
-      const catLen = `${item.category}`.length;
-      item.category = ((text) => {
-        text = text.trim()
-          .replace(/[\r\n\t]+/g, ' ')
-          .replace(/\s{2,}/g, ' ');
+      const categoryMaxLen = 100;
+      const categoryLength = `${item.category}`.length;
+      item.category = (text => {
+        text = text.trim().replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ');
         const parts = `${text}`.split(' ');
-        const rebuild = [];
-        let buildLen = 0;
-        parts.forEach((word) => {
-          if (buildLen >= maxLen) return !1;
-          rebuild.push(word);
-          buildLen += `${word}`.length;
+        const rebuildParts = [];
+        let rebuildLength = 0;
+        parts.forEach(word => {
+          if (rebuildLength >= categoryMaxLen) return !1;
+          rebuildParts.push(word);
+          rebuildLength += `${word}`.length;
         });
-        let category = rebuild.join(' ') + (catLen > maxLen ? '...' : '');
+        const category = rebuildParts.join(' ') +
+          (categoryLength > categoryMaxLen ? '...' : '');
+
         return AMC.rebuildSuffixedCategory(
           category, cachedCategories, rawData.length);
       })(item.category);
+
       cachedCategories.push(item.category);
 
       return item;
@@ -4432,6 +4608,56 @@ class AMCData {
       cachedCategories.push(mapData.category);
       return mapData;
     });
+  }
+
+  /**
+   * Get custom legend data
+   * @param {object} data of:
+   * {
+   *   rawData: array,
+   *   ?seriesData: array,
+   * }
+   * @param {object} chartOpts
+   * @return {array} of:
+   * [
+   *   {name: string, fill: am5.Color},
+   * ]
+   */
+  legendDataCustom(data, chartOpts) {
+    chartOpts = chartOpts ?? {};
+    const customLegendOpts = chartOpts.customLegend ?? {};
+
+    const categoryField = customLegendOpts.categoryField || 'sentiment';
+    if (!(customLegendOpts.enabled ?? null) || !categoryField) return [];
+
+    data = data ?? {};
+    const rawData = data.rawData ?? null;
+    const seriesData = data.seriesData ?? null;
+    if (!rawData && !seriesData) return [];
+
+    const legendData = [];
+    const keyedName = {};
+    const colorField = customLegendOpts.colorField || 'color';
+
+    rawData.forEach((it, index) => {
+      const name = it[categoryField] ?? undefined;
+      if (!name) return !0;
+      if ('undefined' !== typeof keyedName[name]) return !0;
+
+      /** @type {object|null} */
+      const dataSettings = seriesData[index]['data_settings'] ?? null;
+
+      /** @type {am5.Color|null} */
+      const fill = dataSettings?.fill ??
+        (colorField ? am5.color(it[colorField]) : null);
+
+      if (!fill) return !0;
+
+      legendData.push({ name, fill });
+      keyedName[name] = fill;
+    });
+
+    return legendData;
   }
 };
 // end: AMCData
@@ -4770,30 +4996,35 @@ class AMC {
       const axisLabelAdapterSpacing = isHorizontal ? 'dx' : 'dy';
       const axisLocation = isHorizontal ? 'locationX' : 'locationY';
 
-      const valueLabelOpts = chartOpts.valueLabels ?? {};
+      const globalValueLabelsOpts = chartOpts.valueLabels ?? {};
 
-      const fontSize = valueLabelOpts.fontSize ?? chartOpts.labelFontSize ?? undefined;
+      /** @type {number|string} Eg. 12, "1.5rem" */
+      const fontSize = valueLabelsOpts.fontSize ??
+        globalValueLabelsOpts.fontSize ??
+        chartOpts.labelFontSize ?? undefined;
 
       /**
-       * Get outer label fill color
+       * Get label fill color when outside the bar
        * @return {am5.Color}
        */
-      let labelOuterFill = (() => {
-        const colorObj = valueLabelOpts.outerFill
-          ? AMC.parseColorAndOpacity(valueLabelOpts.outerFill)
-          : undefined;
-        return colorObj ? colorObj.color : am5.color(0x333333);
+      const labelOuterFill = (() => {
+        const outerFill = valueLabelsOpts.outerFill ??
+          globalValueLabelsOpts.outerFill ??
+          null;
+        const colorObj = AMC.parseColorAndOpacity(outerFill, '#333333');
+        return colorObj.color;
       })();
 
       /**
-       * Get inner label fill color
+       * Get label fill color when inside the bar
        * @return {am5.Color}
        */
-      let labelInnerFill = (() => {
-        const colorObj = valueLabelOpts.innerFill
-          ? AMC.parseColorAndOpacity(valueLabelOpts.innerFill)
-          : undefined;
-        return colorObj ? colorObj.color : am5.color(0x000000);
+      const labelInnerFill = (() => {
+        const innerFill = valueLabelsOpts.innerFill ??
+          globalValueLabelsOpts.innerFill ??
+          null;
+        const colorObj = AMC.parseColorAndOpacity(innerFill, '#000000');
+        return colorObj.color;
       })();
 
       let label = am5.Label.new(root, {
@@ -4837,19 +5068,6 @@ class AMC {
       label.adapters.add("fill", function(fill, target) {
         const item = target.dataItem;
         if (item) {
-          const labelOpts = item.dataContext?.data_settings?.valueLabelOpts ?? {};
-          labelInnerFill = (() => {
-            const colorObj = labelOpts?.innerFill
-              ? AMC.parseColorAndOpacity(labelOpts.innerFill)
-              : undefined;
-            return colorObj ? colorObj.color : labelInnerFill;
-          })();
-          labelOuterFill = (() => {
-            const colorObj = labelOpts?.outerFill
-              ? AMC.parseColorAndOpacity(labelOpts.outerFill)
-              : undefined;
-            return colorObj ? colorObj.color : labelOuterFill;
-          })();
           const val = item.get(axisValue, 0);
           return (val / baseMax > 0.8) ? labelInnerFill : labelOuterFill;
         }
@@ -5289,11 +5507,16 @@ class AMC {
       ? opts.renderer
       : am5xy.AxisRendererY.new(root, {});
     delete opts.renderer;
+    const valueAxisOpts = (chartOpts.yAxis ?? {}).valueAxis ?? {};
+    if (valueAxisOpts.columnHeight) {
+      valueAxisOpts.extraMax = valueAxisOpts.columnHeight + 0;
+      delete valueAxisOpts.columnHeight;
+    }
     const yAxis = chart.yAxes.push(am5xy.ValueAxis.new(root, {
       maxDeviation: 0.2,
-      renderer: yRenderer,
       ...opts,
-      ...((chartOpts.yAxis ?? {}).valueAxis ?? {}),
+      ...valueAxisOpts,
+      renderer: yRenderer,
     }));
 
     return yAxis;
@@ -5362,8 +5585,7 @@ class AMC {
   }
 
   /**
-   * Set legend of given chart
-   * @param {?am5.Chart} chart
+   * Set legend of current chart
    * @param {object} legendOpts
    * @return {am5.Legend|boolean}
    */
@@ -5506,6 +5728,87 @@ class AMC {
       });
     }
     return legend;
+  }
+
+  /**
+   * Set custom legend of current chart
+   * @param {array} rawData
+   * @param {?array} seriesData
+   * @return {am5.Legend|null}
+   */
+  setCustomLegend(rawData, seriesData) {
+    const chartOpts = this.chartOpts ?? {};
+    const customLegendOpts = chartOpts.customLegend ?? { enabled: false };
+    if (!(customLegendOpts.enabled ?? false)) return null;
+
+    const customLegendData = AMCData.get(
+      'legendDataCustom', {rawData, seriesData}, chartOpts);
+
+    const chart = this.#chart;
+    const root = this.getRoot() ?? chart?.root ?? null;
+    if (!(customLegendData && customLegendData.length) || !chart || !root)
+      return null;
+
+    let legendWidth = Number(customLegendOpts.width ?? undefined);
+    legendWidth = legendWidth && legendWidth > 0 ? legendWidth : undefined;
+    const customLegend = chart.children.push(
+      am5.Legend.new(root, {
+        centerX: am5.p100,
+        centerY: am5.percent(100),
+        x: am5.percent(100),
+        y: am5.percent(98),
+        width: legendWidth,
+        // layout: root.horizontalLayout,
+        layout: root.verticalLayout,
+      })
+    );
+
+    const customLegendMarkersOpts = customLegendOpts.markers ?? {};
+    let markerSize = Number(customLegendMarkersOpts.size ?? undefined);
+    markerSize = markerSize && markerSize > 0 ? markerSize : 14;
+
+    customLegend.markers.template.setAll({
+      width: markerSize,
+      height: markerSize,
+    });
+
+    /** @type {object} */
+    const customLegendLabelsOpts = (() => {
+      const o = customLegendOpts.labels ?? {};
+
+      /** @type {string|undefined} */
+      let fill = o.fill ?? o.color ?? undefined;
+
+      fill = fill ? am5.color(fill) : null;
+      fill = fill ? fill : am5.color(0x333333);
+
+      return {
+        ...o,
+        fill,
+      };
+    })();
+
+    customLegend.labels.template.setAll({
+      fill: am5.color(0x333333),
+      fontSize: 14,
+      fontWeight: "500",
+      ...customLegendLabelsOpts,
+      text: "{name}",
+    });
+    customLegend.markerRectangles.template.adapters.add("fill", function(fill, target) {
+      if (target.dataItem && target.dataItem.dataContext && target.dataItem.dataContext.fill) {
+        return target.dataItem.dataContext.fill;
+      }
+      return fill;
+    });
+    customLegend.itemContainers.template.setAll({
+      cursorOverStyle: "default",
+      interactive: false,
+    });
+
+    customLegend.data.setAll(customLegendData);
+
+    return customLegend;
   }
 
   /**
@@ -5709,10 +6012,31 @@ class AMC {
       ...seriesOpts,
       ...(opts ?? {}),
     };
-    const registeredFields = ['strokes', 'fills', 'columns'];
-    registeredFields.forEach((field) => {
+
+    const seriesColumnTemplate = series.isType("ColumnSeries")
+      ? series.columns.template
+      : undefined;
+
+    if (seriesColumnTemplate) {
+      const onClick = opts.onclick ?? chartOpts.onclick ?? undefined;
+      if (typeof onClick === "function") {
+        seriesColumnTemplate.events.on("click", e => onClick(e));
+        seriesColumnTemplate.setAll({
+          cursorOverStyle: 'pointer',
+        });
+      }
+    }
+
+    /**
+     * - Set onClick event on column - lower priority than data_settings
+     * - Set global column fill color.
+     * - [BUG] not working for line series to set its stroke
+     */
+    const registeredSeriesFields = ['strokes', 'fills', 'columns'];
+    registeredSeriesFields.forEach(field => {
       if (!series[field]) return !0;
       let sOpts = opts[field] ?? {};
+
       if ("columns" === field) {
         const onClick = opts.onclick ? opts.onclick : chartOpts.onclick;
         if ("function" === typeof onClick) {
@@ -5722,15 +6046,46 @@ class AMC {
           };
           series[field].template.events.on("click", e => onClick(e));
         }
+
+        const parsedColor = sOpts.color
+          ? AMC.parseColorAndOpacity(sOpts.color)
+          : undefined;
+        delete sOpts.color;
+
+        ['fill', 'stroke'].forEach(it => {
+          let colorValue = null;
+          const color = sOpts[it] ?? null;
+          const parsedFieldColor = color
+            ? AMC.parseColorAndOpacity(color)
+            : parsedColor;
+          colorValue = parsedFieldColor?.color ?? undefined;
+          if (colorValue) sOpts[it] = colorValue;
+
+          const opacityKey = `${it}Opacity`;
+          const colorOpacity = sOpts[opacityKey] ?? undefined;
+          colorValue = colorOpacity !== undefined
+            ? colorOpacity
+            : parsedFieldColor?.opacity;
+          if (colorValue) sOpts[opacityKey] = colorValue;
+        });
+        let columnWidth = Number(sOpts.width ?? undefined);
+        columnWidth = columnWidth ? am5.percent(columnWidth) : undefined;
+        if (columnWidth) sOpts.width = columnWidth;
+        else delete sOpts.width;
       }
+
       if (Object.keys(sOpts).length) {
-        series[field].template.setAll(sOpts);
-        if (['strokes', 'fills'].indexOf(field) !== -1) {
-          const setField = sOpts.color
+        if (['strokes', 'fills'].includes(field)) {
+          const parsedColor = sOpts.color
+            ? AMC.parseColorAndOpacity(sOpts.color)
+            : undefined;
+          const setField = parsedColor
             ? `${field}`.substring(0, field.length - 1)
             : null;
-          if (setField) series.set(setField, sOpts.color);
+          // if (setField) series.set(setField, parsedColor.color);
+          if (setField) sOpts[setField] = parsedColor.color;
         }
+        series[field].template.setAll(sOpts);
       }
     });
 
@@ -5801,8 +6156,13 @@ class AMC {
         let fontSize = parseInt(noteSettings.fontSize ?? undefined);
         fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
 
+        let lineHeight = parseInt(noteSettings.lineHeight ?? undefined);
+        lineHeight = !Number.isNaN(lineHeight) && lineHeight > 0
+          ? lineHeight
+          : undefined;
+
         const remainingOpts = { ...noteSettings };
-        ['dy', 'background', 'oversizedBehavior', 'textAlign', 'fontSize']
+        ['dy', 'background', 'oversizedBehavior', 'textAlign', 'fontSize', 'lineHeight']
           .forEach(it => delete remainingOpts[it]);
 
         return {
@@ -5810,11 +6170,7 @@ class AMC {
           oversizedBehavior,
           textAlign,
           fontSize,
-          // lineHeight: undefined,
-          // paddingTop: undefined,
-          // paddingRight: undefined,
-          // paddingBottom: undefined,
-          // paddingLeft: undefined,
+          lineHeight,
         };
       })();
 
@@ -5852,8 +6208,14 @@ class AMC {
         if (!point || !currentSeries.chart) return defaultDy;
         const plotHeight = currentSeries.chart.plotContainer.height();
 
-        if (point.y > plotHeight * 0.75) return -Math.abs(defaultDy);
-        return defaultDy;
+        // If the data point is dangerously close to the TOP (e.g., top 25%),
+        // force the label to go DOWN by making dy strictly positive
+        if (point.y < plotHeight * 0.25) {
+          return Math.abs(defaultDy);
+        }
+
+        // Default behavior: push the label UP by making dy strictly negative
+        return -Math.abs(defaultDy);
       });
 
       container.adapters.add("centerY", function(defaultCenterY, target) {
@@ -5861,8 +6223,15 @@ class AMC {
         if (!point || !currentSeries.chart) return defaultCenterY;
         const plotHeight = currentSeries.chart.plotContainer.height();
 
-        if (point.y > plotHeight * 0.75) return am5.percent(100);
-        return am5.percent(0);
+        // If the point is close to the TOP, anchor the TOP of the label (0%)
+        // so it hangs safely downward
+        if (point.y < plotHeight * 0.25) {
+          return am5.percent(0);
+        }
+
+        // Default behavior: anchor the BOTTOM of the label (100%)
+        // so it sits nicely above the data point
+        return am5.percent(100);
       });
 
       const isColumn = currentSeries instanceof am5xy.ColumnSeries;
@@ -5875,88 +6244,6 @@ class AMC {
 
       return bullet;
     });
-  }
-
-  /** @deprecated */
-  setSeriesAnnotationSetting_V0(series) {
-    const isSupportAnnotation = (
-      series.isType("ColumnSeries") ||
-      series.isType("LineSeries")
-    );
-
-    if (!isSupportAnnotation) return series;
-
-    series.bullets.push(function (root, currentSeries, dataItem) {
-    /** @type {object|undefined} */
-      const noteSettings = dataItem.dataContext?.annotation_settings ?? undefined;
-
-      /** @type {string} */
-      const text = noteSettings?.text ?? '';
-      if (!noteSettings || !text) return;
-
-      const spriteOpts = (() => {
-        /** @type {object|undefined} */
-        const backgroundOpts = noteSettings.background ?? undefined;
-
-        /** @type {am5.RoundedRectangle|undefined} */
-        const background = backgroundOpts
-          ? am5.RoundedRectangle.new(root, {...backgroundOpts})
-          : undefined;
-
-        const dy = parseInt(noteSettings.dy ?? 60);
-        const behaviors = [
-          'none',
-          'wrap',
-          'truncate',
-          'fit',
-          'wrap-no-spaces',
-        ];
-        let oversizedBehavior = noteSettings.oversizedBehavior ?? null;
-        oversizedBehavior = behaviors.includes(oversizedBehavior)
-          ? oversizedBehavior
-          : 'wrap';
-
-        let maxWidth = parseInt(noteSettings.maxWidth ?? null);
-        // maxWidth = isNaN(maxWidth)
-        //   ? undefined
-        //   : (maxWidth > 0 ? maxWidth : undefined);
-        maxWidth = maxWidth && maxWidth > 0 ? maxWidth : 220;
-
-        const aligns = ['left', 'center', 'right'];
-        let textAlign = noteSettings.textAlign ?? '';
-        textAlign = aligns.includes(textAlign) ? textAlign : 'left';
-
-        let fontSize = parseInt(noteSettings.fontSize ?? undefined);
-        fontSize = !Number.isNaN(fontSize) && fontSize > 0 ? fontSize : 12;
-        
-        return {
-          ...noteSettings,
-          dy,
-          maxWidth,
-          oversizedBehavior,
-          textAlign,
-          fontSize,
-          background,
-        };
-      })();
-
-      const isColumn = currentSeries instanceof am5xy.ColumnSeries;
-
-      const bullet = am5.Bullet.new(root, {
-        locationY: isColumn ? 1 : undefined,
-        sprite: am5.Label.new(root, {
-          text,
-          centerX: am5.percent(50),
-          centerY: am5.percent(100),
-          fill: am5.color(0x000000),
-          ...spriteOpts,
-        })
-      });
-
-      return bullet;
-    });
-
-    return series;
   }
 
   /**
