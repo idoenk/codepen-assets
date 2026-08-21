@@ -1101,10 +1101,15 @@ class AMCHandler {
     const root = amc.createRoot();
     const chart = amc.createXYChart(root);
 
-    const yAxisBullet = function (root, axis, dataItem) {
+    /** @type {boolean} */
+    const hasAnyAvatar = !!seriesData.find(it => it.avatar);
+    const avatarSize = 32;
+
+    /** @type {function|false} */
+    const yAxisBullet = hasAnyAvatar && function (root, axis, dataItem) {
       const sprite = am5.Picture.new(root, {
-        width: 32,
-        height: 32,
+        width: avatarSize,
+        height: avatarSize,
         centerX: am5.percent(50),
         centerY: am5.percent(50),
         src: dataItem.dataContext.avatar,
@@ -1114,14 +1119,14 @@ class AMCHandler {
 
       // Moves icon to the left of the label
       label.events.on("boundschanged", function (e) {
-        sprite.set("centerX", 32 + ((40-32)/2));
+        sprite.set("centerX", avatarSize + ((40 - avatarSize) / 2));
       });
 
       return am5xy.AxisBullet.new(root, {
         location: 0.5,
         sprite: sprite
       });
-    };
+    }
 
     const yAxis = amc.setXCategoryAxis(chart, {
       categoryField: "category",
@@ -1135,7 +1140,7 @@ class AMCHandler {
     });
     yAxis.get("renderer").labels.template.setAll({
       textAlign: "right",
-      paddingRight: 40,
+      paddingRight: hasAnyAvatar ? 40 : 12,
       maxWidth: 320,
       oversizedBehavior: "wrap",
     });
@@ -1213,133 +1218,6 @@ class AMCHandler {
    */
   horizontalColumnTopMetric(rawData, metricField) {
     return this.horizontalColumn(rawData, metricField);
-  }
-
-  /**
-   * @deprecated
-   * Render clustered column by specified metricField
-   * @param {array} rawData
-   * @param {string} metricField Default: doc_count
-   */
-  horizontalColumn_BAK(rawData, metricField='doc_count') {
-    metricField = metricField ? metricField : 'doc_count';
-    return this.horizontalColumnTopMetric(rawData, metricField);
-  }
-
-  /**
-   * @deprecated
-   * Render clustered column of top post sorted by specified metricField
-   * @param {array} rawData
-   * @param {string} metricField
-   */
-  horizontalColumnTopMetric_BAK(rawData, metricField) {
-    this.initialize();
-    const seriesData = AMCData.get(
-      'seriesDataHorizontalColumn', rawData, metricField);
-
-    const chartOpts = this.chartOpts;
-    const amc = this.getAmc(this.chartId, {chartOpts});
-    const root = amc.createRoot();
-    const chart = amc.createXYChart(root);
-
-    const bulletYAxis = function (root, axis, dataItem) {
-      const sprite = am5.Picture.new(root, {
-        width: 32,
-        height: 32,
-        centerX: am5.percent(50),
-        centerY: am5.percent(50),
-        src: dataItem.dataContext.avatar,
-      });
-
-      const label = dataItem.get("label");
-
-      // Moves icon to the left of the label
-      label.events.on("boundschanged", function (e) {
-        sprite.set("centerX", 32 + ((40-32)/2));
-      });
-
-      return am5xy.AxisBullet.new(root, {
-        location: 0.5,
-        sprite: sprite
-      });
-    };
-
-    const yAxis = amc.setXCategoryAxis(chart, {
-      categoryField: "category",
-      renderer: am5xy.AxisRendererY.new(root, {
-        inversed: true,
-        cellStartLocation: 0.1,
-        cellEndLocation: 0.9,
-        minorGridEnabled: true,
-      }),
-      bullet: bulletYAxis,
-    });
-    yAxis.get("renderer").labels.template.setAll({
-      oversizedBehavior: "wrap",
-      textAlign: "right",
-      paddingRight: 40,
-      maxWidth: 320
-    });
-    yAxis.data.setAll(seriesData);
-
-    const xAxis = amc.setYAxis(chart, {
-      renderer: am5xy.AxisRendererX.new(root, {
-        strokeOpacity: 0.1,
-      }),
-      extraMax: 0.05,
-      min: 0
-    });
-
-    /**
-     * Create horizontal column series
-     * @param {string} field
-     * @param {string} name
-     * @param {?object} colorOpts
-     * @returns {series}
-     */
-    function createSeries(field, name, colorOpts) {
-      const series = chart.series.push(am5xy.ColumnSeries.new(root, {
-        name: name,
-        ...(colorOpts ? colorOpts : {}),
-        xAxis: xAxis,
-        yAxis: yAxis,
-        valueXField: field,
-        categoryYField: "category",
-        sequencedInterpolation: true,
-      }));
-
-      amc.setSeriesTemplate(series);
-
-      series.columns.template.setAll({
-        height: am5.p100,
-        strokeOpacity: 1,
-      });
-
-      const valueLabelsOpts = chartOpts.valueLabels ?? {};
-
-      if (valueLabelsOpts.enabled ?? true) {
-        series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts));
-      }
-
-      return series;
-    }
-    let seriesName = chartOpts.series?.name ?? '';
-    seriesName = seriesName
-      ? seriesName
-      : AMC.ucfirst(`${metricField}`.replace('_', ' ').toLowerCase());
-
-    const colorOpts = AMC.getSeriesColorFromOptions(chartOpts);
-    const series = createSeries("value", seriesName, colorOpts);
-    series.data.setAll(seriesData);
-    series.appear(AMCData.SERIES_FADE_IN);
-
-    const legend = amc.setLegend();
-    if (legend) {
-      legend.data.setAll(chart.series.values);      
-      legend.appear(AMCData.SERIES_FADE_IN);
-    }
-
-    return this.triggerChartAppearance();
   }
 
   /**
