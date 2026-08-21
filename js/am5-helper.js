@@ -4023,9 +4023,9 @@ class AMCData {
 
     // Failover: set empty dataType value if metaField is not empty
     dataType = !dataType && metaField
-      ? (/\.bot\./.test(metaField)
+      ? (/\.?\bbot\b\.?/.test(metaField)
         ? "bot"
-        : (/sentiment?/.test(metaField) ? "sentimen" : ""))
+        : (/\bsentiment?\b/.test(metaField) ? "sentimen" : ""))
       : dataType;
 
     const mapLabel = AMC.getMapLabel(dataType);
