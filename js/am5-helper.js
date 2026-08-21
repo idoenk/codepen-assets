@@ -1692,7 +1692,7 @@ class AMCHandler {
    */
   categoryVerticalColumn(rawData) {
     this.initialize();
-    const seriesData = AMCData.get('seriesDataVerticalColumnCategory', rawData);
+    const seriesData = AMCData.get('seriesDataCategoryVerticalColumn', rawData);
 
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, {chartOpts});
@@ -4575,11 +4575,11 @@ class AMCData {
   }
 
   /**
-   * Transform given data for vertical column (reviews)
+   * Transform given data for category vertical column
    * @param {array} rawData
    * @return {array}
    */
-  seriesDataVerticalColumnCategory(rawData) {
+  seriesDataCategoryVerticalColumn(rawData) {
     const data = rawData.map(it => {
       const dto = it.dto ?? it;
       const item = {
