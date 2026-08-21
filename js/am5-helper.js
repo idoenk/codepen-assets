@@ -2122,10 +2122,10 @@ class AMCHandler {
     if (cursorEnabled) {
       const hoverScale = chartOpts.hoverScale ?? undefined;
       const activeShiftRadius = chartOpts.activeShiftRadius ?? undefined;
-      if (hoverScale)
+      if (hoverScale !== undefined)
         series.slices.template.states.create("hover", {scale: hoverScale});
 
-      if (activeShiftRadius) {
+      if (activeShiftRadius !== undefined) {
         series.slices.template.states.create("active", {
           shiftRadius: activeShiftRadius
         });
