@@ -1167,8 +1167,6 @@ class AMCHandler {
         sequencedInterpolation: true,
       }));
 
-      amc.setSeriesTemplate(series);
-
       series.columns.template.setAll({
         height: am5.p100,
         strokeOpacity: 1,
@@ -1189,6 +1187,8 @@ class AMCHandler {
 
     const colorOpts = AMC.getSeriesColorFromOptions(chartOpts);
     const series = createSeries("value", seriesName, colorOpts);
+
+    amc.setSeriesTemplate(series);
     series.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
 
@@ -1236,7 +1236,6 @@ class AMCHandler {
     this.initialize();
     const seriesData = AMCData.get(
       'seriesDataHorizontalColumn', rawData, metricField);
-    console.log('in horizontal column top metric', 'seriesData', seriesData, 'rawData', rawData, 'metricField', metricField)
 
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, {chartOpts});
@@ -2205,8 +2204,8 @@ class AMCHandler {
       })
     }));
     amc.setSeriesTemplate(series);
-
     amc.setBullets(series, seriesData, chart);
+
     series.data.setAll(seriesData);
     xAxis.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
@@ -2400,7 +2399,6 @@ class AMCHandler {
     }));
     amc.setSeriesTemplate(series);
     amc.setSeriesDataProcessor(series);
-    amc.setSeriesAnnotationSetting(series);
 
     if (isLineSeries) amc.setBullets(series, seriesData);
     else series.data.setAll(seriesData);
@@ -4495,6 +4493,7 @@ class AMCData {
       Object.assign(item, {
         color: dto?.color ?? meta?.color ?? "",
         data_settings: dto?.data_settings ?? meta?.data_settings ?? undefined,
+        annotation_settings: dto?.annotation_settings ?? meta?.annotation_settings ?? undefined,
       });
       Object.assign(item, AMCData.parseItemDataSettings(item));
 
@@ -6090,6 +6089,7 @@ class AMC {
     });
 
     this.setSeriesColumnTemplateField(series);
+    this.setSeriesAnnotationSetting(series);
 
     return !0;
   }
