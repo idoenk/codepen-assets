@@ -693,7 +693,7 @@ class AMCHandler {
     const seriesData = AMC.dto('seriesDataCombinedGrowth', rawData);
     const itemsData = AMC.dto('itemsDataCombinedGrowth', rawData);
 
-    const hasDiff = seriesData
+    const hasDiff = !!seriesData
       .find((item) => "undefined" !== typeof item['diff_0']);
 
     const chartOpts = this.chartOpts;
@@ -737,6 +737,7 @@ class AMCHandler {
     const cursorOpts = chartOpts.cursor ?? {};
     const tooltipOpts = cursorOpts.tooltip ?? {};
     delete tooltipOpts.labelText;
+
     const legendOpts = chartOpts.legend ?? {};
     const labelValueOpts = legendOpts.labelValue ?? {};
     const legendValueText = amc.getLegendValueTextFormat();
@@ -1755,7 +1756,6 @@ class AMCHandler {
         marginBottom: "1rem"
       },
     });
-    root.container.set("layout", root.verticalLayout);
     const chart = amc.createPieChart(root);
 
     const legendOpts = chartOpts.legend ?? {};
@@ -1912,7 +1912,6 @@ class AMCHandler {
         marginBottom: "1rem"
       },
     });
-    root.container.set("layout", root.verticalLayout);
     const chart = amc.createPieChart(root);
 
     const legendOpts = chartOpts.legend ?? {};
@@ -2110,8 +2109,7 @@ class AMCHandler {
       rootOpts: {
         marginBottom: "1rem",
       },
-    });
-    root.container.set("layout", root.verticalLayout);
+    });;
     const chart = amc.createPieChart(root);
 
     const legendOpts = chartOpts.legend ?? {};
@@ -5101,6 +5099,13 @@ class AMC {
         }, 100)
       };
       root.events.on("frameended", callback);
+    }
+
+    const legendOpts = chartOpts.legend ?? {};
+    if (legendOpts.enabled ?? null) {
+      const isSeparatedLegend = !!(legendOpts.separated ?? false);
+      // Avoid overlap long legend text with The X-Axis Below
+      if (!isSeparatedLegend) root.container.set("layout", root.verticalLayout);
     }
 
     return root;
