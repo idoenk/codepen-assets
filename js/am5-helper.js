@@ -3968,7 +3968,7 @@ class AMCData {
   /**
    * Transform given data for series of pie chart
    * @param {array} rawData
-   * @param {string} metaField
+   * @param {string} metaField Eg. bot, sentimen, title_sentiment_label, etc
    * @return {array} of:
    * [
    *   {
@@ -4023,7 +4023,7 @@ class AMCData {
     dataType = !dataType && metaField
       ? (/\.?\bbot\b\.?/.test(metaField)
         ? "bot"
-        : (/\bsentiment?\b/.test(metaField) ? "sentimen" : ""))
+        : (/sentiment?/.test(metaField) ? "sentimen" : ""))
       : dataType;
 
     const mapLabel = AMC.getMapLabel(dataType);
@@ -5620,8 +5620,6 @@ class AMC {
    */
   setCustomLegend(rawData, seriesData) {
     const chartOpts = this.chartOpts ?? {};
-    const customLegendOpts = chartOpts.customLegend ?? { enabled: false };
-    if (!(customLegendOpts.enabled ?? false)) return null;
 
     const customLegendData = AMCData.get(
       'legendDataCustom', {rawData, seriesData}, chartOpts);
@@ -5631,15 +5629,27 @@ class AMC {
     if (!(customLegendData && customLegendData.length) || !chart || !root)
       return null;
 
-    let legendWidth = Number(customLegendOpts.width ?? undefined);
-    legendWidth = legendWidth && legendWidth > 0 ? legendWidth : undefined;
+    const customLegendOpts = chartOpts.customLegend ?? { enabled: false };
+    if (!(customLegendOpts.enabled ?? false))
+      return null;
+
+    let bottom = Number(customLegendOpts.bottom ?? 0);
+    bottom = isNaN(bottom) ? 0 : Math.max(0, Math.min(100, bottom));
+
+    const yMaxPercent = (chartOpts.yAxis?.showLabels ?? true) ? 95 : 98;
+    const legendYValue = Math.max(
+      0, Math.min(100, yMaxPercent - bottom)
+    );
+
+    const legendWidth = Number(customLegendOpts.width ?? undefined);
+
     const customLegend = chart.children.push(
       am5.Legend.new(root, {
-        centerX: am5.p100,
-        centerY: am5.percent(100),
+        centerX: am5.percent(100),
+        centerY: am5.percent(bottom >= 0.5 ? 0 : 100),
         x: am5.percent(100),
-        y: am5.percent(98),
-        width: legendWidth,
+        y: am5.percent(legendYValue),
+        width: legendWidth && legendWidth > 0 ? legendWidth : undefined,
         // layout: root.horizontalLayout,
         layout: root.verticalLayout,
       })
