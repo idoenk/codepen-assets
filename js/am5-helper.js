@@ -5641,19 +5641,91 @@ class AMC {
       0, Math.min(100, yMaxPercent - bottom)
     );
 
+    let right = Number(customLegendOpts.right ?? 0);
+    right = isNaN(right) ? 0 : Math.max(0, Math.min(100, right));
+    const legendXValue = Math.max(0, Math.min(100, 100 - right));
+
     const legendWidth = Number(customLegendOpts.width ?? undefined);
+
+    const resolvedPaddings = AMCData.resolvePaddingConfig(customLegendOpts, {
+      top: null,
+      right: null,
+      bottom: null,
+      left: null,
+    });
+    const legendPadding = Object.fromEntries(
+      Object.entries(resolvedPaddings)
+        .filter(([key]) => key.startsWith("padding"))
+    );
 
     const customLegend = chart.children.push(
       am5.Legend.new(root, {
-        centerX: am5.percent(100),
-        centerY: am5.percent(bottom >= 0.5 ? 0 : 100),
-        x: am5.percent(100),
+        centerX: am5.percent(right >= 50 ? 0 : 100),
+        centerY: am5.percent(bottom >= 50 ? 0 : 100),
+        x: am5.percent(legendXValue),
         y: am5.percent(legendYValue),
         width: legendWidth && legendWidth > 0 ? legendWidth : undefined,
+        ...(legendPadding ? legendPadding : {}),
         // layout: root.horizontalLayout,
         layout: root.verticalLayout,
       })
     );
+
+    // Setting background
+    (customLegend => {
+      const bgOpts = customLegendOpts.background || {};
+      const bgFillOpts = bgOpts.fill
+        ? AMC.parseColorAndOpacity(bgOpts.fill)
+        : null;
+      const bgStrokeOpts = bgOpts.stroke
+        ? AMC.parseColorAndOpacity(bgOpts.stroke)
+        : null;
+
+      if (bgFillOpts || bgStrokeOpts || bgOpts.strokeWidth !== undefined) {
+        const defaultRadius = 4;
+
+        /** @type {NaN|number} */
+        let radius = Number(bgOpts.cornerRadius ?? undefined);
+        radius = !isNaN(radius) && radius >= 0 ? radius : defaultRadius;
+
+        const bgSettings = {
+          // cornerRadiusTL: radius,
+          // cornerRadiusTR: radius,
+          // cornerRadiusBL: radius,
+          // cornerRadiusBR: radius,
+          // fill: undefined,
+          // fillOpacity: undefined,
+          // stroke: undefined,
+          // strokeWidth: undefined,
+          // strokeOpacity: undefined,
+        };
+
+        ['TL', 'TR', 'BL', 'BR'].forEach(it => {
+          const val = Number(bgOpts[`cornerRadius${it}`] ?? undefined);
+          bgSettings[`cornerRadius${it}`] = !isNaN(val) && val >= 0 ? val : radius;
+        });
+
+        if (bgFillOpts) {
+          bgSettings.fill = bgFillOpts.color;
+          bgSettings.fillOpacity = bgOpts.fillOpacity ?? bgFillOpts.opacity;
+        } else {
+          bgSettings.fillOpacity = 0;
+        }
+  
+        if (bgStrokeOpts) {
+          bgSettings.stroke = bgStrokeOpts.color;
+          bgSettings.strokeOpacity = bgOpts.strokeOpacity ?? bgStrokeOpts.opacity;
+        }
+  
+        if (bgOpts.strokeWidth !== undefined) {
+          bgSettings.strokeWidth = Number(bgOpts.strokeWidth);
+        } else if (bgStrokeOpts) {
+          bgSettings.strokeWidth = 1;
+        }
+  
+        customLegend.set("background", am5.RoundedRectangle.new(root, bgSettings));
+      }
+    })(customLegend);
 
     const customLegendMarkersOpts = customLegendOpts.markers ?? {};
     let markerSize = Number(customLegendMarkersOpts.size ?? undefined);
