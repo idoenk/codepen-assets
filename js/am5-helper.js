@@ -7,14 +7,17 @@
  * AmChart Render Handler
  */
 class AMCHandler {
-  /** @var {string} */
+  /** @type {string} */
   chartId;
 
-  /** @var {object} */
+  /** @type {object} */
   chartOpts;
 
-  /** @var {AMC} */
+  /** @type {AMC} */
   #amc;
+
+  /** @type {boolean} Flag to set stacked column in clustered handler */
+  #stackedColumn;
 
   /**
    * AMCHandler constructor
@@ -344,6 +347,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     };
     // end: createSeries
@@ -433,6 +438,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     };
     itemsData.forEach((item) => {
@@ -524,6 +531,7 @@ class AMCHandler {
     amc.setSeriesTemplate(series);
     amc.setSeriesDataProcessor(series);
     amc.setBullets(series, seriesData);
+    series.data.setAll(seriesData);
 
     return this.triggerChartAppearance();
   }
@@ -792,6 +800,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       if (chartMode === 'line') amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     }
 
@@ -975,6 +985,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series);
+      series.data.setAll(seriesData);
+
       return series;
     };
 
@@ -1389,6 +1401,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     };
     itemsData.forEach((item) => {
@@ -1467,6 +1481,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     };
     itemsData.forEach(item => {
@@ -1491,6 +1507,7 @@ class AMCHandler {
   }
 
   /**
+   * @deprecated?
    * Render Category Clustered Column
    * @param {array} rawData
    */
@@ -1547,6 +1564,7 @@ class AMCHandler {
         width: am5.percent(100),
       });
 
+      series.data.setAll(seriesData);
       series.appear(AMCData.SERIES_FADE_IN);
 
       const legend = amc.setLegend();
@@ -1638,7 +1656,8 @@ class AMCHandler {
   }
 
   /**
-   * Render Vertical Clustered Column
+   * Render Vertical Clustered or Stacked Column
+   * This handler also support category or date X-Axis
    * @param {array} rawData
    */
   verticalClusteredColumn(rawData) {
@@ -1646,11 +1665,15 @@ class AMCHandler {
     const seriesData = AMCData.get('seriesDataVerticalClusteredColumn', rawData);
     const itemsData = AMCData.get('itemsDataVerticalClusteredColumn', rawData);
 
+    /** @type {bool} */
+    const isStackedColumn = this.#stackedColumn ?? false;
+
     const chartOpts = this.chartOpts;
     const amc = this.getAmc(this.chartId, {chartOpts});
     const root = amc.createRoot();
     const chart = amc.createXYChart(root, {
       paddingLeft: 10,
+      ...(isStackedColumn ? { maskBullets: false } : {}),
     });
     amc.setCursor(chart, { behavior: "none" });
 
@@ -1674,13 +1697,14 @@ class AMCHandler {
     xAxis.data.setAll(seriesData);
 
     const yAxis = amc.setYAxis(chart, {
+      ...(isStackedColumn ? {min: 0, calculateTotals: true} : {}),
       maxDeviation: 0.3,
       renderer: am5xy.AxisRendererY.new(root, {
         strokeOpacity: 0.1
       }),
     });
 
-    const createSeries = (name, field) => {
+    const createSeries = (name, field, colorSettings) => {
       const series = chart.series.push(am5xy.ColumnSeries.new(root, {
         name,
         xAxis: xAxis,
@@ -1689,14 +1713,26 @@ class AMCHandler {
         tooltip: am5.Tooltip.new(root, {
           labelText: "{name}: [bold]{valueY}[/]"
         }),
+        ...(colorSettings ? colorSettings : {}),
         ...(isDateXAxis
           ? {valueXField: xAxisOpts.categoryField ?? "date"}
           : {categoryXField: `${xAxisOpts.categoryField}`}),
-        clustered: true,
+        ...(isStackedColumn ? {stacked: true} : {clustered: true}),
       }));
       amc.setSeriesTemplate(series);
+
       if (isDateXAxis) amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+
+      const valueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      if (valueLabelsOpts.enabled ?? false) {
+        series.bullets.push(AMC.createAdaptiveLabelRenderer(chartOpts, 'vertical'));
+        if (isStackedColumn && (valueLabelsOpts.showTotal ?? true)) {
+          series.bullets.push(AMC.createTotalLabelRenderer(chartOpts, 'vertical'));
+        }
+      }
+
       const valueXPlaceholder = isDateXAxis
         ? "valueX.formatDate('dd MMM, yyyy')"
         : "categoryX";
@@ -1711,11 +1747,17 @@ class AMCHandler {
         width: am5.percent(100 - columnGap),
       });
 
+      series.data.setAll(seriesData);
       series.appear(AMCData.SERIES_FADE_IN);
 
       return series;
     };
-    itemsData.forEach(item => createSeries(item.label, item.ch_key));
+    // end: createSeries
+
+    // Send data_settings directly to createSeries despite templateField
+    // to let legend show up properly
+    itemsData.forEach(
+      item => createSeries(item.label, item.ch_key, item.data_settings));
 
     const legend = amc.setLegend();
     if (legend) {
@@ -1724,6 +1766,16 @@ class AMCHandler {
     }
 
     return this.triggerChartAppearance();
+  }
+
+  /**
+   * Render Vertical Stacked Column
+   * @param {array} rawData
+   */
+  verticalStackedColumn(rawData) {
+    this.#stackedColumn = true;
+
+    return this.verticalClusteredColumn(rawData);
   }
 
   /**
@@ -2053,6 +2105,7 @@ class AMCHandler {
     const xAxis = amc.setXCategoryAxis(chart, {
       renderer: xRenderer,
     });
+    xAxis.data.setAll(seriesData);
 
     const yRenderer = am5radar.AxisRendererRadial.new(root, {
       minGridDistance: 30
@@ -2084,7 +2137,6 @@ class AMCHandler {
     amc.setBullets(series, seriesData, chart);
 
     series.data.setAll(seriesData);
-    xAxis.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
 
     return this.triggerChartAppearance();
@@ -2277,8 +2329,8 @@ class AMCHandler {
     amc.setSeriesDataProcessor(series);
 
     if (isLineSeries) amc.setBullets(series, seriesData);
-    else series.data.setAll(seriesData);
 
+    series.data.setAll(seriesData);
     series.appear(AMCData.SERIES_FADE_IN);
     const legend = amc.setLegend();
     if (legend) {
@@ -2473,6 +2525,8 @@ class AMCHandler {
       amc.setSeriesTemplate(series);
       amc.setSeriesDataProcessor(series);
       amc.setBullets(series, seriesData);
+      series.data.setAll(seriesData);
+
       return series;
     };
     itemsData.forEach((item) => {
@@ -3593,6 +3647,7 @@ class AMCData {
     return rawData.map(item => {
       const clonedItem = {...item};
       const keyedSeries = {};
+
       [...(clonedItem.series ?? [])].forEach(it => {
         /** @type {string|null} */
         const key = (() => {
@@ -3608,7 +3663,9 @@ class AMCData {
         const value = Number(it.doc_count || it.value || 0);
         keyedSeries[key] = !isNaN(value) ? value : 0;
       });
+
       delete clonedItem.series;
+
       return {...clonedItem, ...keyedSeries};
     });
   }
@@ -3638,6 +3695,7 @@ class AMCData {
    * ]
    */
   itemsDataVerticalClusteredColumn(rawData) {
+    const keyedDataSettings = {};
     const keyedData = {};
     rawData.forEach(item => {
       item.series?.forEach(it => {
@@ -3660,12 +3718,24 @@ class AMCData {
           return itemField ? it[itemField] : key;
         })();
         keyedData[key] = label;
+
+        if (it.data_settings || it.color) {
+          const settings = it.data_settings ?? {
+            fill: it.color,
+            stroke: it.color,
+          };
+
+          keyedDataSettings[key] = AMCData.parseItemDataSettings(
+            { data_settings: settings }
+          ).data_settings;
+        }
       });
     });
     
     return Object.keys(keyedData).map(ch_key => ({
       ch_key,
-      label: keyedData[ch_key]
+      label: keyedData[ch_key],
+      data_settings: keyedDataSettings[ch_key] ?? undefined,
     }));
   }
 
@@ -4846,7 +4916,15 @@ class AMC {
    * - categoryVerticalColumn
    *
    * @param {Object} chartOpts - Configuration options for the chart.
-   * @param {number|string} [chartOpts.labelFontSize] - The font size of the label.
+   * @param {number|string} [chartOpts.labelFontSize] - The general font size of the label on chart.
+   * @param {Object} [chartOpts.valueLabels] - Configuration options for the value labels.
+   * @param {boolean} [chartOpts.valueLabels.showLabel=true] - Whether to show the metric value label.
+   * @param {boolean} [chartOpts.valueLabels.showPercentage=true] - Whether to show the percentage value in stacked charts.
+   * @param {boolean} [chartOpts.valueLabels.boldLabel=false] - Whether to display the metric value in bold.
+   * @param {boolean} [chartOpts.valueLabels.boldPercentageLabel=false] - Whether to display the percentage value in bold.
+   * @param {number|string} [chartOpts.valueLabels.fontSize] - The font size of the value labels.
+   * @param {string} [chartOpts.valueLabels.outerFill] - The text color of the value labels when rendered outside the bar.
+   * @param {string} [chartOpts.valueLabels.innerFill] - The text color of the value labels when rendered inside the bar.
    * @param {'vertical'|'horizontal'} [orientation='horizontal'] - The bar orientation.
    * @returns {Function} A callback that evaluates spatial bounds to render the text.
    */
@@ -4854,24 +4932,44 @@ class AMC {
     chartOpts = chartOpts || {};
     orientation = orientation || 'horizontal';
 
+    const isHorizontal = orientation === 'horizontal';
+    const ratioTreshold = 0.8;
+
+    // Store per-axis state weakly so it gets garbage-collected when the chart is disposed
+    const axisStateMap = new WeakMap();
+
     return function(root, series, dataItem) {
       const dataSettings = dataItem.dataContext?.data_settings ?? {};
       const valueLabelsOpts = dataSettings.valueLabels ?? {};
 
-      // Value labels is forced to not visible for this dataItem
-      if (valueLabelsOpts.enabled === false) return undefined;
-
-      const isHorizontal = orientation === 'horizontal';
+      /** @type {am5.Series.yAxis|am5.Series.xAxis|null}*/
       const baseAxis = series.get(isHorizontal ? 'xAxis' : 'yAxis');
-      const baseMax = baseAxis.getPrivate("max", 1);
 
-      const axisValue = isHorizontal ? 'valueX' : 'valueY'
-      const axisLabelCenter = isHorizontal ? 'centerY' : 'centerX';
+      // Value labels is forced to not visible for this dataItem
+      if (valueLabelsOpts.enabled === false || !baseAxis) return undefined;
+
+      const axisValue = isHorizontal ? 'valueX' : 'valueY';
       const axisLabelAdapterCenter = isHorizontal ? 'centerX' : 'centerY';
       const axisLabelAdapterSpacing = isHorizontal ? 'dx' : 'dy';
       const axisLocation = isHorizontal ? 'locationX' : 'locationY';
 
       const globalValueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      const showLabel = valueLabelsOpts.showLabel ??
+        globalValueLabelsOpts.showLabel ??
+        true;
+
+      const showPercentage = valueLabelsOpts.showPercentage ??
+        globalValueLabelsOpts.showPercentage ??
+        true;
+
+      const boldLabel = valueLabelsOpts.boldLabel ??
+        globalValueLabelsOpts.boldLabel ??
+        false;
+
+      const boldPercentageLabel = valueLabelsOpts.boldPercentageLabel ??
+        globalValueLabelsOpts.boldPercentageLabel ??
+        false;
 
       /** @type {number|string} Eg. 12, "1.5rem" */
       const fontSize = valueLabelsOpts.fontSize ??
@@ -4898,29 +4996,122 @@ class AMC {
         const innerFill = valueLabelsOpts.innerFill ??
           globalValueLabelsOpts.innerFill ??
           null;
-        const colorObj = AMC.parseColorAndOpacity(innerFill, '#000000');
+        const colorObj = AMC.parseColorAndOpacity(innerFill, '#ffffff');
         return colorObj.color;
       })();
 
+      const isStacked = series.get("stacked", false);
+
       let label = am5.Label.new(root, {
-        [axisLabelCenter]: am5.p50,
-        text: `{${axisValue}}`,
+        centerX: am5.p50,
+        centerY: isStacked ? am5.p50 : (isHorizontal ? am5.p50 : am5.p100),
+        textAlign: "center",
         fontSize,
-        populateText: true
+        populateText: true,
+      });
+
+      // Vertical non-stacked: initialize axis state and axis resize listener ONLY ONCE per yAxis
+      if (!isHorizontal && !isStacked) {
+        if (!axisStateMap.has(baseAxis)) {
+          const state = {
+            clearancePx: 0, // Will be populated by the first non-empty rendered label
+            updateAxisExtraMax: null
+          };
+
+          state.updateAxisExtraMax = () => {
+            const axisHeight = baseAxis.height();
+            const neededPx = state.clearancePx;
+
+            if (neededPx > 0 && axisHeight > neededPx) {
+              const idealExtraMax = neededPx / (axisHeight - neededPx);
+              const currentExtraMax = baseAxis.get("extraMax") || 0;
+
+              if (Math.abs(currentExtraMax - idealExtraMax) > 0.002) {
+                baseAxis.set("extraMax", idealExtraMax);
+              }
+            }
+          };
+
+          baseAxis.events.on("boundschanged", state.updateAxisExtraMax);
+          axisStateMap.set(baseAxis, state);
+        }
+
+        const axisState = axisStateMap.get(baseAxis);
+
+        // Only attach if we haven't successfully measured a label yet
+        if (axisState && axisState.clearancePx === 0) {
+          const disposableListener = label.events.on("boundschanged", () => {
+            const renderedHeight = label.height();
+
+            if (renderedHeight > 0) {
+              // Lock the state once the first non-empty label is measured
+              if (axisState.clearancePx === 0) {
+                axisState.clearancePx = Math.ceil(renderedHeight) + 6;
+                axisState.updateAxisExtraMax();
+              }
+              // Clean up this listener immediately after measurement succeeds
+              disposableListener.dispose();
+            }
+          });
+        }
+      }
+
+      const labelTemplate = showLabel
+        ? (boldLabel ? `[bold]{${axisValue}}[/]` : `{${axisValue}}`)
+        : "";
+
+      const valuePercentField = isHorizontal
+        ? "valueXTotalPercent"
+        : "valueYTotalPercent";
+
+      const percentTemplate = (() => {
+        if (!isStacked || !showPercentage) return '';
+
+        return boldPercentageLabel
+          ? `[bold]{${valuePercentField}.formatNumber('0.')}%[/]`
+          : `{${valuePercentField}.formatNumber('0.')}%`;
+      })();
+
+      const stackedTemplate = [labelTemplate, percentTemplate]
+        .filter(Boolean)
+        .join("\n");
+
+      // Dynamically adjust text template for stacked vs non-stacked
+      label.adapters.add("text", function(text, target) {
+        const item = target.dataItem;
+        if (!item) return text;
+
+        const val = item.get(axisValue, 0);
+        if (!val || val <= 0) return "";
+
+        if (isStacked) {
+          const totalPercent = item.get(valuePercentField);
+          // If 100% (single series in stack for this category),
+          // hide inner label so top total label handles it
+          if (typeof totalPercent === "number" && totalPercent >= 99.9) {
+            return "";
+          }
+          return stackedTemplate;
+        }
+
+        return labelTemplate;
       });
 
       // Dynamically adjust anchor position (centerX or centerY)
       label.adapters.add(axisLabelAdapterCenter, function(centerAxis, target) {
         const item = target.dataItem;
         if (item) {
-          const val = item.get(axisValue, 0);
-          const ratio = val / baseMax;
+          if (isStacked) return am5.p50;
 
-          // If bar width is > 80% of the axis max, flip label inside
-          return isHorizontal
-            ? (ratio > 0.8 ? am5.p100 : am5.p0)
-            : (ratio > 0.8 ? am5.p0 : am5.p100);
-            // : am5.p0
+          // Vertical: labels are always outside, above the bar
+          if (!isHorizontal) return am5.p100;
+
+          const val = item.get(axisValue, 0);
+          const currentMax = baseAxis.getPrivate("max", 1);
+          const ratio = val / currentMax;
+          // If bar length is greater than ratioTreshold (Default: 0.8)
+          // of axis length, flip label to inside
+          return (ratio > ratioTreshold ? am5.p100 : am5.p0);
         }
         return centerAxis;
       });
@@ -4929,12 +5120,16 @@ class AMC {
       label.adapters.add(axisLabelAdapterSpacing, function(dAxis, target) {
         const item = target.dataItem;
         if (item) {
-          const val = item.get(axisValue, 0);
+          if (isStacked) return 0;
 
-          // Push 5px left (inside) or 5px right (outside)
-          return isHorizontal
-            ? (val / baseMax > 0.8 ? -5 : 5)
-            : dAxis;
+          // Vertical: -2px (slightly above bar)
+          if (!isHorizontal) return -2;
+
+          const val = item.get(axisValue, 0);
+          const currentMax = baseAxis.getPrivate("max", 1);
+          const ratio = val / currentMax;
+          // Push 5px (inside bar) or 5px (outside bar) based on ratio
+          return ratio > ratioTreshold ? -5 : 5;
         }
         return dAxis;
       });
@@ -4942,15 +5137,183 @@ class AMC {
       // Dynamically adjust text color for contrast
       label.adapters.add("fill", function(fill, target) {
         const item = target.dataItem;
-        if (item) {
-          const val = item.get(axisValue, 0);
-          return (val / baseMax > 0.8) ? labelInnerFill : labelOuterFill;
+        if (!item) return fill;
+
+        if (isStacked) {
+          if (valueLabelsOpts.innerFill || globalValueLabelsOpts.innerFill) {
+            return labelInnerFill;
+          }
+
+          // Evaluate luminance of column fill, use appropriate text color
+          // Use #fff when it is dark column fill (luminance <= 128), else #333
+          const column = item.get("graphics");
+          const columnFill = column?.get("fill") || series.get("fill");
+          if (columnFill && typeof am5.Color?.alternative === 'function') {
+            return am5.Color.alternative(
+              columnFill, am5.color(0xffffff), am5.color(0x333333)
+            );
+          }
+
+          // Fallback to labelInnerFill when column fill color cannot be determined
+          return labelInnerFill;
         }
-        return fill;
+
+        // Vertical: labels are always outside (above the bar)
+        // Hence always use labelOuterFill
+        if (!isHorizontal) return labelOuterFill;
+
+        const val = item.get(axisValue, 0);
+        const currentMax = baseAxis.getPrivate("max", 1);
+        const ratio = val / currentMax;
+
+        return ratio > ratioTreshold ? labelInnerFill : labelOuterFill;
       });
 
       return am5.Bullet.new(root, {
-        [axisLocation]: 1, // Always attach to the end of the bar
+        [axisLocation]: isStacked ? 0.5 : 1,
+        sprite: label
+      });
+    };
+  }
+
+  /**
+   * Creates a rendering callback function for stacked column total labels.
+   * Renders the sum of all stacked segments on top of the column stack.
+   *
+   * @param {Object} chartOpts - Configuration options for the chart.
+   * @param {boolean} [chartOpts.valueLabels.boldTotalLabel=true] - Whether to render the total label in bold.
+   * @param {'vertical'|'horizontal'} [orientation='vertical'] - The bar orientation.
+   * @returns {Function} A callback that renders the total stack label.
+   */
+  static createTotalLabelRenderer(chartOpts, orientation = 'vertical') {
+    chartOpts = chartOpts || {};
+    orientation = orientation || 'vertical';
+    const isHorizontal = orientation === 'horizontal';
+
+    const axisStateMap = new WeakMap();
+
+    return function(root, series, dataItem) {
+      const dataSettings = dataItem.dataContext?.data_settings ?? {};
+      const valueLabelsOpts = dataSettings.valueLabels ?? {};
+      const globalValueLabelsOpts = chartOpts.valueLabels ?? {};
+
+      if (valueLabelsOpts.showTotal === false || globalValueLabelsOpts.showTotal === false) {
+        return undefined;
+      }
+
+      /** @type {am5.Series.yAxis|am5.Series.xAxis|null}*/
+      const baseAxis = series.get(isHorizontal ? 'xAxis' : 'yAxis');
+      if (!baseAxis) return undefined;
+
+      const axisLocation = isHorizontal ? 'locationX' : 'locationY';
+      const fontSize = valueLabelsOpts.totalFontSize ??
+        globalValueLabelsOpts.totalFontSize ??
+        valueLabelsOpts.fontSize ??
+        globalValueLabelsOpts.fontSize ??
+        chartOpts.labelFontSize ?? undefined;
+
+      const boldTotalLabel = valueLabelsOpts.boldTotalLabel ??
+        globalValueLabelsOpts.boldTotalLabel ??
+        true;
+
+      const labelOuterFill = (() => {
+        const outerFill = valueLabelsOpts.totalFill ??
+          globalValueLabelsOpts.totalFill ??
+          valueLabelsOpts.outerFill ??
+          globalValueLabelsOpts.outerFill ??
+          null;
+        const colorObj = AMC.parseColorAndOpacity(outerFill, '#333333');
+        return colorObj.color;
+      })();
+
+      const totalField = isHorizontal ? 'valueXTotal' : 'valueYTotal';
+      const totalTemplate = `{${totalField}.formatNumber('#,###')}`;
+      const totalText = boldTotalLabel
+        ? `[bold]${totalTemplate}[/]`
+        : totalTemplate;
+
+      const label = am5.Label.new(root, {
+        [isHorizontal ? 'centerY' : 'centerX']: am5.p50,
+        [isHorizontal ? 'centerX' : 'centerY']: am5.p100,
+        [isHorizontal ? 'dx' : 'dy']: isHorizontal ? 4 : -4,
+        text: totalText,
+        fontSize,
+        fill: labelOuterFill,
+        populateText: true,
+        textAlign: "center",
+      });
+
+      // Axis clearance listener so the top total label is not clipped
+      if (!isHorizontal) {
+        if (!axisStateMap.has(baseAxis)) {
+          const state = {
+            clearancePx: 0,
+            updateAxisExtraMax: null
+          };
+
+          state.updateAxisExtraMax = () => {
+            const axisHeight = baseAxis.height();
+            const neededPx = state.clearancePx;
+
+            if (neededPx > 0 && axisHeight > neededPx) {
+              const idealExtraMax = neededPx / (axisHeight - neededPx);
+              const currentExtraMax = baseAxis.get("extraMax") || 0;
+
+              if (Math.abs(currentExtraMax - idealExtraMax) > 0.002) {
+                baseAxis.set("extraMax", idealExtraMax);
+              }
+            }
+          };
+
+          baseAxis.events.on("boundschanged", state.updateAxisExtraMax);
+          axisStateMap.set(baseAxis, state);
+        }
+
+        const axisState = axisStateMap.get(baseAxis);
+        if (axisState && axisState.clearancePx === 0) {
+          const disposableListener = label.events.on("boundschanged", () => {
+            const renderedHeight = label.height();
+            if (renderedHeight > 0) {
+              if (axisState.clearancePx === 0) {
+                axisState.clearancePx = Math.ceil(renderedHeight) + 6;
+                axisState.updateAxisExtraMax();
+              }
+              disposableListener.dispose();
+            }
+          });
+        }
+      }
+
+      // Only display total label on the top-most series that has a non-zero value for this category
+      label.adapters.add("visible", function(visible, target) {
+        const item = target.dataItem;
+        if (!item) return false;
+
+        const val = item.get(isHorizontal ? "valueX" : "valueY", 0);
+        if (val <= 0) return false;
+
+        const chart = series.chart;
+        if (!chart) return visible;
+
+        const dataContext = item.dataContext;
+        if (!dataContext) return visible;
+
+        const seriesList = chart.series.values;
+        const currentIndex = seriesList.indexOf(series);
+
+        for (let i = currentIndex + 1; i < seriesList.length; i++) {
+          const higherSeries = seriesList[i];
+          if (!higherSeries || !higherSeries.get("stacked")) continue;
+          const field = higherSeries.get(isHorizontal ? "valueXField" : "valueYField");
+          const higherVal = Number(dataContext[field] || 0);
+          if (higherVal > 0) return false;
+        }
+
+        return true;
+      });
+
+      return am5.Bullet.new(root, {
+        [axisLocation]: 1,
         sprite: label
       });
     };
@@ -5819,12 +6182,10 @@ class AMC {
       enabled: true,
       hoverScale: 3, // {boolean|int}
     };
-    const cursorEnabled = chartOpts.cursor?.enabled ?? true;
     const bulletEnabled = bulletOpts.enabled ?? true;
-    if (!bulletEnabled) {
-      series.data.setAll(data);
-      return !1;
-    }
+    if (!bulletEnabled) return !1;
+
+    const cursorEnabled = chartOpts.cursor?.enabled ?? true;
 
     let hoverScale = undefined;
     if (cursorEnabled) {
@@ -5897,10 +6258,7 @@ class AMC {
       });
     });
 
-    if (data) {
-      series.data.setAll(data);
-      this.scaleBulletOnCursorMove(chart);
-    }
+    this.scaleBulletOnCursorMove(chart);
   }
 
   /**
@@ -6053,10 +6411,11 @@ class AMC {
       }
     });
 
-    this.setSeriesColumnTemplateField(series);
-    this.setSeriesAnnotationSetting(series);
+    series = this.setSeriesAnnotationSetting(
+      this.setSeriesColumnTemplateField(series, 'data_settings')
+    );
 
-    return !0;
+    return series;
   }
 
   /**
@@ -6070,7 +6429,6 @@ class AMC {
       series.isType("ColumnSeries") ||
       series.isType("LineSeries")
     );
-
     if (!isSupportAnnotation) return series;
 
     series.bullets.push(function (root, currentSeries, dataItem) {
@@ -6084,20 +6442,22 @@ class AMC {
       /** @type {object|undefined} */
       const backgroundOpts = noteSettings.background ?? undefined;
 
-      /** @type {am5.RoundedRectangle|undefined} */
+      /** @type {am5.PointedRectangle|undefined} */
       const background = (backgroundOpts && typeof backgroundOpts === 'object')
-        ? am5.RoundedRectangle.new(root, {...backgroundOpts})
+        ? am5.PointedRectangle.new(root, {
+            ...backgroundOpts,
+            pointerOrientation: "up",
+            pointerBaseWidth: 12,
+            pointerLength: 4
+          })
         : undefined;
-
-      /** @type {number} */
-      const dy = parseInt(noteSettings.dy ?? 10);
 
       // Create a Container to handle layout, background, and adaptive positioning
       const container = am5.Container.new(root, {
         centerX: am5.percent(50),
         centerY: am5.percent(100),
         background,
-        dy,
+        dy: parseInt(noteSettings.dy ?? 10),
       });
 
       /** @type {object} */
@@ -6149,66 +6509,153 @@ class AMC {
 
       container.children.push(label);
 
-      // Move all your Adapters (centerX, dy, centerY) to target the CONTAINER
-      container.adapters.add("centerX", function(defaultCenterX, target) {
+      /** @type {number} Data item index inside curentSeries's dataItems */
+      const dataItemIndex = currentSeries.dataItems.indexOf(dataItem);
+
+      // Helper: 2D Physics Packing Engine
+      const getNoteState = () => {
         const point = dataItem.get("point");
-        if (!point || !currentSeries.chart) return defaultCenterX;
+        const chart = currentSeries.chart;
+        if (!point || !chart) return { isTop: false, xArea: 'center', absY: 0 };
 
-        const plotWidth = currentSeries.chart.plotContainer.width();
-        if (point.x > plotWidth * 0.85) {
-          label.set("textAlign", "right"); // Modify label alignment inside container adapter
-          return am5.percent(100);
-        }
-        if (point.x < plotWidth * 0.15) {
-          label.set("textAlign", "left");
-          return am5.percent(0);
-        }
+        const plotWidth = chart.plotContainer.width();
+        const plotHeight = chart.plotContainer.height();
 
-        label.set("textAlign", spriteOpts.textAlign);
-        return defaultCenterX;
+        // 1. Horizontal Anchor
+        let myXArea = 'center';
+        if (point.x < plotWidth * 0.15) myXArea = 'left';
+        else if (point.x > plotWidth * 0.85) myXArea = 'right';
+
+        const isTop = point.y < plotHeight * 0.4;
+
+        // 2. Deterministic 2D Placer
+        const getPlacedY = (targetIdx) => {
+          const placed = [];
+          const BOX_W = 180;    // Est. width of box
+          const BOX_H = 45;     // Est. height of box (adjust if your text has multiple lines)
+          const SPACING = 12;   // Safe distance between boxes
+          const BASE_OFFSET = 20; // Initial distance from the top of the bar
+
+          for (let i = 0; i <= targetIdx; i++) {
+            const item = currentSeries.dataItems[i];
+            if (!item?.dataContext?.annotation_settings) continue;
+
+            const pt = item.get("point");
+            if (!pt) continue;
+
+            const itemIsTop = pt.y < plotHeight * 0.4;
+            // Natural coordinate if there is no disturbance (the smaller Y, the further up)
+            let currentY = itemIsTop ? pt.y + BASE_OFFSET : pt.y - BASE_OFFSET;
+
+            let xArea = 'center';
+            if (pt.x < plotWidth * 0.15) xArea = 'left';
+            else if (pt.x > plotWidth * 0.85) xArea = 'right';
+
+            // Calculate X-axis range
+            let left = xArea === 'left' ? pt.x : (xArea === 'right' ? pt.x - BOX_W : pt.x - (BOX_W / 2));
+            let right = left + BOX_W;
+
+            let hasCollision = true;
+            let attempts = 0;
+
+            // Shift loop: Keep shifting until there is no 2D collision
+            while (hasCollision && attempts < 15) {
+              hasCollision = false;
+
+              // Calculate current Y-axis range
+              let top = itemIsTop ? currentY : currentY - BOX_H;
+              let bottom = itemIsTop ? currentY + BOX_H : currentY;
+
+              for (const p of placed) {
+                // AABB (Axis-Aligned Bounding Box) Collision Logic
+                const intersectX = left < p.right + SPACING && right + SPACING > p.left;
+                const intersectY = top < p.bottom + SPACING && bottom + SPACING > p.top;
+
+                if (intersectX && intersectY) {
+                  hasCollision = true;
+                  // Collision detected! Move the new box past the edge of the blocking box
+                  currentY = itemIsTop ? p.bottom + SPACING : p.top - SPACING;
+                  break;
+                }
+              }
+              attempts++;
+            }
+
+            // Save the box that has passed the collision test into the simulation array
+            placed.push({
+              left, right,
+              top: itemIsTop ? currentY : currentY - BOX_H,
+              bottom: itemIsTop ? currentY + BOX_H : currentY
+            });
+
+            if (i === targetIdx) return currentY;
+          }
+          return isTop ? point.y + BASE_OFFSET : point.y - BASE_OFFSET;
+        };
+
+        return { isTop, xArea: myXArea, absY: getPlacedY(dataItemIndex) };
+      };
+
+      const POINTER_LENGTH = 8; // Absolute length of the locked arrow
+
+      // --- CONTAINER ADAPTERS ---
+      container.adapters.add("centerX", function(defaultCenterX) {
+        const state = getNoteState();
+        if (state.xArea === 'left') return am5.percent(0);
+        if (state.xArea === 'right') return am5.percent(100);
+        return am5.percent(50);
       });
 
-      container.adapters.add("dy", function(defaultDy, target) {
-        const point = dataItem.get("point");
-        if (!point || !currentSeries.chart) return defaultDy;
-        const plotHeight = currentSeries.chart.plotContainer.height();
-
-        // If the data point is dangerously close to the TOP (e.g., top 25%),
-        // force the label to go DOWN by making dy strictly positive
-        if (point.y < plotHeight * 0.25) {
-          return Math.abs(defaultDy);
-        }
-
-        // Default behavior: push the label UP by making dy strictly negative
-        return -Math.abs(defaultDy);
+      container.adapters.add("centerY", function(defaultCenterY) {
+        return getNoteState().isTop ? am5.percent(0) : am5.percent(100);
       });
 
-      container.adapters.add("centerY", function(defaultCenterY, target) {
+      container.adapters.add("dy", function(defaultDy) {
         const point = dataItem.get("point");
-        if (!point || !currentSeries.chart) return defaultCenterY;
-        const plotHeight = currentSeries.chart.plotContainer.height();
+        if (!point) return defaultDy;
+        const state = getNoteState();
 
-        // If the point is close to the TOP, anchor the TOP of the label (0%)
-        // so it hangs safely downward
-        if (point.y < plotHeight * 0.25) {
-          return am5.percent(0);
-        }
-
-        // Default behavior: anchor the BOTTOM of the label (100%)
-        // so it sits nicely above the data point
-        return am5.percent(100);
+        // PURE MATH: Shifting 'dy' is just the result of subtracting
+        // the Target Absolute (absY) from the Origin Point
+        return state.absY - point.y;
       });
 
-      const isColumn = currentSeries instanceof am5xy.ColumnSeries;
+      // --- POINTER ADAPTERS ---
+      if (background && background.isType("PointedRectangle")) {
+        background.adapters.add("pointerOrientation", function() {
+          return getNoteState().isTop ? "up" : "down";
+        });
+
+        background.adapters.add("pointerX", function() {
+          const width = container.width() || label.width() || 0;
+          if (width === 0) return 0;
+
+          const state = getNoteState();
+          if (state.xArea === 'left') return 10;
+          if (state.xArea === 'right') return width - 10;
+          return width / 2;
+        });
+
+        background.adapters.add("pointerY", function() {
+          const height = container.height() || label.height() || 0;
+          const orientation = background.get("pointerOrientation");
+
+          // ABSOLUTE LOCK: The arrow ignores the destructive 'dy' value,
+          // forcing it to remain stationary at 8 pixels
+          return orientation === "up" ? -POINTER_LENGTH : height + POINTER_LENGTH;
+        });
+      }
 
       // Register the container as the bullet's sprite
       const bullet = am5.Bullet.new(root, {
-        locationY: isColumn ? 1 : undefined,
+        locationY: currentSeries instanceof am5xy.ColumnSeries ? 1 : undefined,
         sprite: container
       });
 
       return bullet;
     });
+
+    return series;
   }
 
   /**
