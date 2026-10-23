@@ -1681,11 +1681,30 @@ class AMCHandler {
     const isDateXAxis = !!(xAxisOpts.isDateAxis ?? false);
     const cursorOpts = chartOpts.cursor ?? {};
     const isCursorEnabled = !!(cursorOpts.enabled ?? true);
-    const xRenderer = am5xy.AxisRendererX.new(root, {
+
+    let xRendererOpts = {
       cellStartLocation: .1,
       cellEndLocation: .9,
       minorGridEnabled: true
-    });
+    };
+
+    if (isDateXAxis) {
+      /** @var {object|bool} */
+      const minorDateFormats = xAxisOpts.minorDateFormats ?? null;
+
+      /** @var {bool} */
+      const hasMinorGrid = [true, null].indexOf(minorDateFormats) !== -1 ||
+        typeof minorDateFormats === 'object';
+
+      xRendererOpts = {
+        ...xRendererOpts,
+        minGridDistance: 200,
+        minorLabelsEnabled: hasMinorGrid,
+      };
+    }
+
+    const xRenderer = am5xy.AxisRendererX.new(root, xRendererOpts);
+
     const xAxis = isDateXAxis
       ? amc.setXDateAxis(chart, {
           renderer: xRenderer,
@@ -1716,7 +1735,7 @@ class AMCHandler {
         ...(colorSettings ? colorSettings : {}),
         ...(isDateXAxis
           ? {valueXField: xAxisOpts.categoryField ?? "date"}
-          : {categoryXField: `${xAxisOpts.categoryField}`}),
+          : {categoryXField: xAxisOpts.categoryField ?? "category"}),
         ...(isStackedColumn ? {stacked: true} : {clustered: true}),
       }));
       amc.setSeriesTemplate(series);
@@ -1733,9 +1752,17 @@ class AMCHandler {
         }
       }
 
-      const valueXPlaceholder = isDateXAxis
-        ? "valueX.formatDate('dd MMM, yyyy')"
-        : "categoryX";
+      const valueXPlaceholder = (() => {
+        if (!isDateXAxis) return 'categoryX';
+
+        const intervalUnit = xAxisOpts.intervalUnit || 'day';
+        const dateFmt = intervalUnit === 'year'
+          ? 'yyyy'
+          : (intervalUnit === 'month' ? 'MMM, yyyy' : 'dd MMM, yyyy');
+
+        return `valueX.formatDate("${dateFmt}")`;
+      })();
+
       const tooltipText = isCursorEnabled
         ? `{name} on {${valueXPlaceholder}}:{valueY}`
         : undefined;
@@ -5674,7 +5701,9 @@ class AMC {
 
     if (xAxisOpts.tooltip.enabled)
       dateAxisParams.tooltip = am5.Tooltip.new(root, {});
+
     const xAxis = chart.xAxes.push(am5xy.DateAxis.new(root, dateAxisParams));
+
     if (xAxisOpts.categoryDateFormat) {
       const interval = xAxisOpts.intervalUnit ?? 'day';
       xAxis.set("dateFormats", {
